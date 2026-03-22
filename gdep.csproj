@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>gdep</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    publish_dll: Framework-dependent, OS-agnostic single .dll
+    Run with: dotnet publish -c Release -\-no-self-contained -o publish_dll
+    Invoke:   dotnet publish_dll/gdep.dll <command> [args]
+  -->
+  <PropertyGroup Condition="'$(PublishDll)'=='true'">
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" />
+    <PackageReference Include="Spectre.Console" Version="0.54.0" />
+  </ItemGroup>
+
+</Project>

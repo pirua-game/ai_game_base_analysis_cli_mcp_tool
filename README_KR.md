@@ -1,0 +1,266 @@
+# 🎮 gdep — 게임 코드베이스 분석 도구
+
+**Unity · UE5 대형 프로젝트를 0.5초 만에 파악하고, Claude / Cursor가 실제 코드를 읽게 만드는 도구**
+
+[![CI](https://github.com/pirua-game/gdep/actions/workflows/ci.yml/badge.svg)](https://github.com/pirua-game/gdep/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/gdep)](https://pypi.org/project/gdep/)
+[![npm](https://img.shields.io/npm/v/gdep-mcp)](https://www.npmjs.com/package/gdep-mcp)
+
+> *"이 클래스 수정하면 어디까지 영향 가?"* — 3초 만에 정확히 답변, 환각 0건  
+> 실측: **MCP 정확도 100% (5/5)** — 코드 기반 사실 vs 일반 Claude 추측 + 환각
+
+**다른 언어로 읽기:**
+[English](./README.md) · [日本語](./README_JA.md) · [简体中文](./README_ZH.md) · [繁體中文](./README_ZH_TW.md)
+
+---
+
+## ✨ 왜 gdep를 써야 할까?
+
+대형 게임 클라이언트는 고통입니다:
+
+- UE5 Blueprint 300개 이상 → *"이 Ability가 어디서 호출되나?"* 찾는 데 하루 소요
+- Unity Manager 50개 + Prefab 참조 → 리팩토링하다가 순환참조 폭발
+- *"이 클래스 수정하면 어디까지 깨지나?"* → 파일 열어서 30분 수동 추적
+
+**gdep는 이 모든 걸 0.5초 만에 해결합니다.**
+
+### 실측 성능 지표
+
+| 지표 | 수치 | 비고 |
+|------|------|------|
+| UE5 warm scan | **0.46초** | uasset 2,800개 이상 프로젝트 |
+| Unity warm scan | **0.49초** | SSD 환경, 클래스 900개 이상 |
+| 피크 메모리 | **28.5 MB** | 목표 대비 10배 여유 |
+| MCP 정확도 | **5/5 (100%)** | 코드 기반 사실 |
+
+
+
+> 상세 → [docs/BENCHMARK_KR.md](./docs/BENCHMARK_KR.md) · [docs/mcp-benchmark_KR.md](./docs/mcp-benchmark_KR.md)
+
+---
+
+## 🤖 MCP 통합 — AI가 실제 코드를 읽게 만드는 핵심
+
+gdep는 Claude Desktop, Cursor 등 MCP 호환 AI Agent를 위한 MCP 서버를 제공합니다.
+
+### 1줄 설치
+
+```bash
+npm install -g gdep-mcp
+```
+
+### AI Agent 설정 (복붙 3줄)
+
+```json
+{
+  "mcpServers": {
+    "gdep": {
+      "command": "gdep-mcp",
+      "env": { "PYTHONUTF8": "1" }
+    }
+  }
+}
+```
+
+설정 끝. 이제 Claude · Cursor · Gemini가 대화마다 게임 엔진 특화 13개 도구를 사용할 수 있습니다.
+
+### MCP가 바꾸는 것
+
+```
+일반 Claude: "CombatCore는 Manager 계열 의존성이 있을 것 같습니다..." ← 추측
+gdep MCP:   직접 의존 2개 · 간접 200개 이상 UI 클래스 · 에셋: prefabs/UI/combat.prefab
+```
+
+### 13개 MCP 도구 한눈에 보기
+
+| 도구 | 언제 사용 |
+|------|----------|
+| `get_project_context` | **항상 가장 먼저** — 전체 프로젝트 개요 |
+| `analyze_impact_and_risk` | 클래스 수정 전 안전성 확인 |
+| `trace_gameplay_flow` | C++ → Blueprint 호출 체인 추적 |
+| `inspect_architectural_health` | 기술 부채 전체 진단 |
+| `explore_class_semantics` | 낯선 클래스 상세 분석 |
+| `execute_gdep_cli` | CLI 전 기능 직접 접근 |
+| `find_unity_event_bindings` | Inspector 연결 메서드 (코드 검색 불가 영역) |
+| `analyze_unity_animator` | Animator 상태머신 구조 |
+| `analyze_ue5_gas` | GAS Ability / Effect / Tag / ASC 전체 |
+| `analyze_ue5_behavior_tree` | BehaviorTree 에셋 구조 |
+| `analyze_ue5_state_tree` | StateTree 에셋 구조 |
+| `analyze_ue5_animation` | ABP 상태 + Montage + GAS Notify |
+| `analyze_ue5_blueprint_mapping` | C++ 클래스 → Blueprint 구현체 매핑 |
+
+> 상세 설정 → [gdep-cli/gdep-mcp/README_KR.md](./gdep-cli/gdep-mcp/README_KR.md)
+
+---
+
+## 📦 설치
+
+**사전 요구사항**
+
+| 항목 | 버전 | 용도 |
+|------|------|------|
+| Python | 3.11+ | CLI · MCP 서버 |
+| .NET Runtime | 8.0+ | C# / Unity 프로젝트 분석 |
+
+### 원클릭 설치 (권장)
+
+```bash
+# Windows
+install.bat
+
+# macOS / Linux
+chmod +x install.sh && ./install.sh
+```
+
+### 수동 설치
+
+```bash
+cd gdep-cli && pip install -e .
+```
+
+---
+
+## 🚀 빠른 시작
+
+```bash
+gdep detect {경로}                          # 엔진 자동 감지
+gdep scan {경로} --circular --top 15        # 구조 분석
+gdep init {경로}                            # AI Agent용 .gdep/AGENTS.md 생성
+```
+
+`gdep init` 실행 후 Claude · Cursor · Gemini가 프로젝트 컨텍스트를 자동으로 읽고
+어떤 질문에 어떤 gdep 도구를 써야 하는지 스스로 판단합니다.
+
+---
+
+## 🎯 커맨드 레퍼런스
+
+| 커맨드 | 요약 | 언제 사용 |
+|--------|------|----------|
+| `detect` | 엔진 자동 감지 | 첫 분석 전 |
+| `scan` | 결합도 · 순환참조 · 데드코드 | 구조 파악, 리팩토링 전 |
+| `describe` | 클래스 상세 + Blueprint 구현체 + AI 요약 | 낯선 클래스, 코드 리뷰 |
+| `flow` | 메서드 호출 체인 (C++→BP 경계) | 버그 추적, 흐름 분석 |
+| `impact` | 변경 파급 역추적 | 리팩토링 전 안전성 확인 |
+| `lint` | 게임 특화 안티패턴 스캔 | PR 전 품질 체크 |
+| `graph` | 의존성 그래프 내보내기 | 문서화, 시각화 |
+| `diff` | 커밋 전후 의존성 비교 | PR 리뷰, CI 게이트 |
+| `init` | AI Agent 컨텍스트 파일 생성 | **AI 코딩 어시스턴트 최초 설정** |
+| `context` | 프로젝트 컨텍스트 출력 | AI 채팅 복붙용 |
+| `hints` | 싱글톤 힌트 관리 | 흐름 정확도 향상 |
+| `config` | LLM 설정 | AI 요약 기능 사용 전 |
+
+
+## 📖 커맨드 상세
+
+### scan
+
+```bash
+gdep scan {경로} [옵션]
+```
+
+| 옵션 | 설명 |
+|------|------|
+| `--circular` | 순환참조 감지 |
+| `--dead-code` | 미참조 클래스 감지 |
+| `--deep` | 메서드 본문 포함 심화 분석 |
+| `--include-refs` | Prefab/Blueprint 역참조 포함 |
+| `--top N` | 결합도 상위 N개 표시 (기본: 20) |
+| `--format json` | JSON 출력 (CI/Agent용) |
+
+### flow — C++ → Blueprint 경계 자동 추적
+
+```bash
+gdep flow {경로} --class <클래스> --method <메서드> [--depth N]
+```
+
+```
+└── UARGamePlayAbility_BasicAttack.ActivateAbility
+    ├── CommitAbility ○
+    ├── BP_GA_BasicAttack_C.K2_ActivateAbility ○ [BP]   ← Blueprint 진입점
+    └── BP_GA_HeavyAttack_C.K2_ActivateAbility ○ [BP]
+```
+
+### lint — 게임 엔진 특화 안티패턴 13개
+
+| Rule ID | 엔진 | 설명 |
+|---------|------|------|
+| `UNI-PERF-001` | Unity | Update 내 GetComponent/Find |
+| `UNI-PERF-002` | Unity | Update 내 new/Instantiate |
+| `UNI-ASYNC-001` | Unity | Coroutine while(true) yield 없음 |
+| `UNI-ASYNC-002` | Unity | Coroutine 내 FindObjectOfType/Resources.Load |
+| `UE5-PERF-001` | UE5 | Tick 내 SpawnActor/LoadObject |
+| `UE5-PERF-002` | UE5 | BeginPlay 내 동기 LoadObject |
+| `UE5-BASE-001` | UE5 | Super:: 호출 누락 |
+| `UE5-GAS-001` | UE5 | ActivateAbility() 내 CommitAbility() 누락 |
+| `UE5-GAS-002` | UE5 | GAS Ability 내 고비용 world 쿼리 |
+| `UE5-GAS-003` | UE5 | BlueprintCallable 10개 초과 |
+| `UE5-GAS-004` | UE5 | BlueprintPure에 const 누락 |
+| `UE5-NET-001` | UE5 | Replicated 속성에 ReplicatedUsing 콜백 없음 |
+| `GEN-ARCH-001` | 공통 | 순환 참조 |
+
+---
+
+## 🎮 지원 엔진
+
+| 엔진 | 클래스 분석 | 흐름 분석 | 역참조 | 특화 기능 |
+|------|------------|----------|--------|----------|
+| Unity (C#) | ✅ | ✅ | ✅ Prefab/Scene | UnityEvent, Animator |
+| Unreal Engine 5 | ✅ UCLASS/USTRUCT/UENUM | ✅ C++→BP | ✅ Blueprint/Map | GAS, BP 매핑, BT/ST, ABP/Montage |
+| Cocos2d-x (C++) | ✅ | ✅ | — | |
+| .NET (C#) | ✅ | ✅ | — | |
+| Generic C++ | ✅ | ✅ | — | |
+
+---
+
+## 🔄 대표 워크플로우
+
+### 낯선 코드베이스 온보딩
+
+```bash
+gdep init {경로}
+gdep scan {경로} --circular --top 20
+gdep describe {경로} CombatManager --summarize
+gdep flow {경로} --class CombatManager --method ExecuteAction
+```
+
+### UE5 GAS end-to-end 흐름 파악
+
+```bash
+gdep describe {경로} UARGameplayAbility_Dash
+gdep flow {경로} --class UARGameplayAbility_Dash --method ActivateAbility
+```
+
+### 리팩토링 전 안전성 확인
+
+```bash
+gdep impact {경로} CombatCore --depth 5
+gdep lint {경로}
+gdep diff {경로} --commit HEAD
+```
+
+### CI 품질 게이트
+
+```bash
+gdep diff . --commit HEAD~1 --fail-on-cycles
+gdep lint . --format json > lint_report.json
+```
+
+---
+
+## ⚙️ C# 파서 (`gdep.dll`)
+
+**OS 독립적 단일 DLL** — Windows · macOS · Linux 동일 동작.
+
+```bash
+dotnet publish -c Release --no-self-contained -o publish_dll
+```
+
+탐지 우선순위: `$GDEP_DLL` env → `publish_dll/gdep.dll` → `publish/gdep.dll` → 레거시 바이너리
+
+---
+
+*MCP 서버 설정 → [gdep-cli/gdep-mcp/README_KR.md](./gdep-cli/gdep-mcp/README_KR.md)*  
+*CI/CD 통합 → [docs/ci-integration_KR.md](./docs/ci-integration_KR.md)*  
+*성능 벤치마크 → [docs/BENCHMARK_KR.md](./docs/BENCHMARK_KR.md)*  
+*MCP 토큰·정확도 비교 → [docs/mcp-benchmark_KR.md](./docs/mcp-benchmark_KR.md)*

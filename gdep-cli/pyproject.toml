@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gdep"
+version = "0.1.4"
+description = "Game Engine Dependency & AI Analysis Tool"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["game", "unity", "unreal", "dependency", "analysis", "mcp", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "click>=8.0",
+    "fastapi",
+    "uvicorn",
+    "tree-sitter",
+    "tree-sitter-cpp",
+    "mcp[cli]>=1.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/pirua-game/gdep"
+Repository = "https://github.com/pirua-game/gdep"
+Issues = "https://github.com/pirua-game/gdep/issues"
+
+[project.scripts]
+gdep = "gdep.cli:main"
+gdep-mcp-server = "gdep_mcp.server:main"
+
+# gdep + gdep_mcp 
+[tool.setuptools.packages.find]
+include = ["gdep", "gdep.*", "gdep_mcp", "gdep_mcp.*"]

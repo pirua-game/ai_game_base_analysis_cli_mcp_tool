@@ -1,0 +1,124 @@
+name: GDEP CI
+
+on:
+  push:
+    branches: [ main, master ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [ main, master ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+jobs:
+  # ── 1. C# Build ───────────────────────────────────────────────
+  build-dll:
+    name: Build gdep.dll
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build (framework-dependent dll)
+        run: dotnet publish -c Release --no-self-contained -o publish_dll
+
+      - name: Verify dll
+        run: test -f publish_dll/gdep.dll && echo "gdep.dll OK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gdep-dll
+          path: publish_dll/
+          retention-days: 3
+
+
+  # ── 2. Python Lint ────────────────────────────────────────────
+  lint-python:
+    name: Python Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff
+        run: ruff check gdep-cli/gdep gdep-cli/gdep-mcp --config ruff.toml
+
+  # ── 3. Smoke Test (Windows) ───────────────────────────────────
+  # PYTHONUTF8=1 prevents cp1252 UnicodeEncodeError on Windows runners
+  test-windows:
+    name: Smoke Test (Windows)
+    needs: build-dll
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: gdep-dll
+          path: publish_dll/
+
+      - name: Install Python package
+        run: cd gdep-cli; pip install -e .
+
+      - name: Smoke — help
+        run: gdep --help
+
+      - name: Smoke — detect
+        run: gdep detect gdep-cli
+
+      - name: Smoke — dll direct call
+        run: dotnet publish_dll\gdep.dll scan gdep-cli --top 5
+
+  # ── 4. PR Gate — No New Cycles (PR only) ─────────────────────
+  gate-cycles:
+    name: Gate — No New Cycles (PR only)
+    needs: test-windows
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: gdep-dll
+          path: publish_dll/
+
+      - name: Install Python package
+        run: cd gdep-cli && pip install -e .
+
+      - name: Check for new circular dependencies
+        run: gdep diff gdep-cli --commit HEAD~1 --fail-on-cycles
+        continue-on-error: false

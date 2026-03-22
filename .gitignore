@@ -1,0 +1,94 @@
+# ==========================================
+# 1. C# / .NET 관련 (Visual Studio)
+# ==========================================
+bin/
+obj/
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+
+# publish, publish_mac, publish_dll의 핵심 파일은 버전 관리에 포함
+# publish_dll/ = framework-dependent dll (OS-agnostic, dotnet 런타임 필요)
+#
+# 제외: .pdb (디버그 심볼), publish_dll/gdep.exe (dll 방식 전환으로 불필요),
+#        언어별 리소스 폴더 (Roslyn 진단 메시지 번역 — gdep 실행에 불필요)
+*.pdb
+publish_dll/gdep.exe
+publish_dll/cs/
+publish_dll/de/
+publish_dll/es/
+publish_dll/fr/
+publish_dll/it/
+publish_dll/ja/
+publish_dll/ko/
+publish_dll/pl/
+publish_dll/pt-BR/
+publish_dll/ru/
+publish_dll/tr/
+publish_dll/zh-Hans/
+publish_dll/zh-Hant/
+publish/cs/
+publish/de/
+publish/es/
+publish/fr/
+publish/it/
+publish/ja/
+publish/ko/
+publish/pl/
+publish/pt-BR/
+publish/ru/
+publish/tr/
+publish/zh-Hans/
+publish/zh-Hant/
+publish_mac/cs/
+publish_mac/de/
+publish_mac/es/
+publish_mac/fr/
+publish_mac/it/
+publish_mac/ja/
+publish_mac/ko/
+publish_mac/pl/
+publish_mac/pt-BR/
+publish_mac/ru/
+publish_mac/tr/
+publish_mac/zh-Hans/
+publish_mac/zh-Hant/
+
+# ==========================================
+# 2. Python / FastAPI 관련 (gdep-cli)
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.env
+.venv/
+venv/
+ENV/
+*.spec
+
+# ==========================================
+# 3. Frontend 관련 (React / Node.js)
+# ==========================================
+node_modules/
+.pnp/
+.pnp.js
+dist/
+build/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==========================================
+# 5. npm 패키지 (별도 리포 pirua-game/gdep-mcp 로 관리)
+# ==========================================
+gdep-mcp-npm/
+
+# ==========================================
+# 6. OS 관련 (macOS, Windows)
+# ==========================================
+Thumbs.db
+Desktop.ini

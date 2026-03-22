@@ -1,0 +1,126 @@
+name: GDEP Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # ── 1. C# dll 빌드 ────────────────────────────────────────────
+  build-dll:
+    name: Build gdep.dll
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build dll
+        run: dotnet publish -c Release --no-self-contained -o publish_dll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gdep-dll
+          path: publish_dll/
+          retention-days: 1
+
+
+  # ── 2. PyPI 배포 ──────────────────────────────────────────────
+  # OIDC Trusted Publishing 사용 (API 토큰 불필요)
+  # GitHub → Settings → Environments → pypi 환경 생성 필요
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build-dll
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/gdep
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: gdep-dll
+          path: publish_dll/
+
+      - name: Sync version from git tag
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          VERSION=${TAG#v}
+          sed -i "s/^version = .*/version = \"$VERSION\"/" gdep-cli/pyproject.toml
+          echo "Releasing version: $VERSION"
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build wheel & sdist
+        run: python -m build
+        working-directory: gdep-cli
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: gdep-cli/dist/
+
+
+  # ── 3. GitHub Release 생성 ────────────────────────────────────
+  create-release:
+    name: Create GitHub Release
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: gdep-dll
+          path: publish_dll/
+
+      - name: Zip dll for release asset
+        run: zip -r gdep-dll-${GITHUB_REF_NAME}.zip publish_dll/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: gdep ${{ github.ref_name }}
+          body: |
+            ## gdep ${{ github.ref_name }}
+
+            ### Install
+
+            ```bash
+            pip install gdep
+            ```
+
+            ```bash
+            npm install -g gdep-mcp
+            ```
+
+            ### MCP Config (Claude Desktop / Cursor)
+            ```json
+            {
+              "mcpServers": {
+                "gdep": {
+                  "command": "gdep-mcp"
+                }
+              }
+            }
+            ```
+          files: gdep-dll-${{ github.ref_name }}.zip
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

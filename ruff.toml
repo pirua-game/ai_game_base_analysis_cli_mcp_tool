@@ -1,0 +1,37 @@
+# gdep Python lint config (ruff)
+# https://docs.astral.sh/ruff/
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes (unused imports, undefined names, etc.)
+    "I",   # isort (import ordering)
+    "UP",  # pyupgrade (Python version compatibility)
+]
+ignore = [
+    "E501",  # line too long — parser code has long lines intentionally
+    "E741",  # ambiguous var names (l, O, I) — unavoidable in parsers
+    "F401",  # unused import — re-exports in __init__.py
+    # ── Style rules: intentional patterns in parser/analyzer code ──
+    "E701",  # multiple statements on one line (colon) — compact flag checks
+    "E702",  # multiple statements on one line (semicolon)
+    "E722",  # bare except — intentional in detector/runner fallbacks
+    "F841",  # unused variable — some intermediate vars kept for readability
+    "E402",  # module import not at top — sys.path setup required before imports
+    "UP035", # deprecated typing imports — kept for broader compatibility
+    "UP045", # non-pep604 optional annotation
+    "UP006", # non-pep585 annotation
+    "UP037", # quoted annotation
+    "UP015", # redundant open modes
+    "E401",  # multiple imports on one line
+]
+
+[lint.per-file-ignores]
+"gdep/__init__.py"           = ["F401"]
+"gdep-mcp/server.py"         = ["E402", "F841"]
+"gdep-mcp/tools/*.py"        = ["E402"]
+
+[format]
+quote-style = "double"
+line-ending = "auto"

@@ -1,0 +1,8 @@
+requests>=2.31.0
+click>=8.1.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.0.0
+tree-sitter>=0.25.2
+tree-sitter-c>=0.24.1
+tree-sitter-cpp>=0.23.4
