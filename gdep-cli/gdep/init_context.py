@@ -347,13 +347,37 @@ def build_context_output(project_path: str) -> str:
     if agents_md.exists():
         return agents_md.read_text(encoding="utf-8")
 
-    # AGENTS.md 없으면 자동 생성 (저장 포함)
+    # AGENTS.md 없으면 자동 생성 (저장 + .gitignore 추가 포함)
     try:
         agents_md = write_agents_md(project_path, force=False)
         return agents_md.read_text(encoding="utf-8")
     except Exception:
-        # 저장 실패 시(권한 없는 경로 등) 즉석 생성만
         return _build_agents_md(project_path)
+
+
+def _ensure_gitignore(project_root: Path) -> None:
+    """
+    프로젝트 루트의 .gitignore에 .gdep/ 항목이 없으면 자동 추가.
+    Git 저장소가 아닌 경우에도 조용히 스킵한다.
+    """
+    gitignore = project_root / ".gitignore"
+    entry = ".gdep/"
+    try:
+        if gitignore.exists():
+            content = gitignore.read_text(encoding="utf-8")
+            # 이미 있으면 추가 안 함 (.gdep/ 또는 .gdep 로 시작하는 라인)
+            if any(line.strip() in (entry, ".gdep") or line.strip().startswith(".gdep/")
+                   for line in content.splitlines()):
+                return
+            # 끝에 개행 보장 후 추가
+            sep = "" if content.endswith("\n") else "\n"
+            gitignore.write_text(content + sep + entry + "\n", encoding="utf-8")
+        else:
+            # .gitignore 파일 자체가 없으면 생성 (Git 저장소 루트에만)
+            if (project_root / ".git").is_dir():
+                gitignore.write_text(entry + "\n", encoding="utf-8")
+    except Exception:
+        pass  # 권한 오류 등은 조용히 무시
 
 
 def write_agents_md(project_path: str, force: bool = False) -> Path:
@@ -365,10 +389,11 @@ def write_agents_md(project_path: str, force: bool = False) -> Path:
     profile = detect(project_path)
     gdep_dir = Path(profile.root) / ".gdep"
     gdep_dir.mkdir(exist_ok=True)
+    _ensure_gitignore(Path(profile.root))   # .gitignore 자동 추가
     agents_md = gdep_dir / "AGENTS.md"
 
     if agents_md.exists() and not force:
-        return agents_md   # 이미 있으면 그냥 반환 (CLI에서 메시지 출력)
+        return agents_md
 
     content = _build_agents_md(project_path)
     agents_md.write_text(content, encoding="utf-8")

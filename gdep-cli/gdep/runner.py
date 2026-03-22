@@ -232,7 +232,7 @@ def _cs_fingerprint(src: str) -> str:
 
 
 def _cs_cache_path(src: str) -> Path:
-    cache_dir = Path(src).resolve().parent / ".gdep_cache"
+    cache_dir = Path(src).resolve().parent / ".gdep" / "cache"
     cache_dir.mkdir(exist_ok=True)
     return cache_dir / "cs_scan.json"
 
@@ -452,7 +452,7 @@ def describe(profile: ProjectProfile, class_name: str,
 def _get_class_summary(profile: ProjectProfile, class_name: str,
                        context: str, refresh: bool) -> str | None:
     """Retrieve cached summary or call LLM to generate one."""
-    cache_dir = Path(profile.root) / ".gdep_cache" / "summaries"
+    cache_dir = Path(profile.root) / ".gdep" / "cache" / "summaries"
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file = cache_dir / f"{class_name}.txt"
 

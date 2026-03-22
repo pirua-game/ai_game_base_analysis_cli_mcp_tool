@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gdep"
-version = "0.1.5"
+version = "0.1.6"
 description = "Game Engine Dependency & AI Analysis Tool"
 readme = "README.md"
 requires-python = ">=3.11"

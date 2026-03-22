@@ -84,7 +84,7 @@ def _split_src_tag(src: str) -> tuple[str, str]:
 
 def _cache_path(src: str, deep: bool, tag: str = "") -> Path:
     clean_src, _ = _split_src_tag(src)
-    cache_dir = Path(clean_src).resolve().parent / ".gdep_cache"
+    cache_dir = Path(clean_src).resolve().parent / ".gdep" / "cache"
     cache_dir.mkdir(exist_ok=True)
     suffix = f"_{tag}" if tag else ""
     prefix = "deep" if deep else "fast"

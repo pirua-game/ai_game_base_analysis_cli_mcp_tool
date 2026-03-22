@@ -28,7 +28,7 @@ def _get_profile(path: str):
     import json as _json
     import time as _time
     from pathlib import Path as _Path
-    _cache_dir = _Path(path).resolve().parent / ".gdep_cache"
+    _cache_dir = _Path(path).resolve().parent / ".gdep" / "cache"
     _cache_dir.mkdir(exist_ok=True)
     _cache_file = _cache_dir / "detect.json"
     # Invalidate if any .cs / .h / .cpp / .uproject / .csproj changed

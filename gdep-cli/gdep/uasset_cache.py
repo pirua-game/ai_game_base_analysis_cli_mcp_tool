@@ -21,7 +21,7 @@ import os
 import re
 from pathlib import Path
 
-_CACHE_DIR_NAME = ".gdep_cache"
+_CACHE_DIR_NAME = ".gdep/cache"
 _IGNORE_DIRS    = frozenset({"__ExternalActors__", "__ExternalObjects__",
                               "Collections", "Developers"})
 
