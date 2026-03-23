@@ -2,7 +2,6 @@
 
 **Unity・UE5・Axmol 大規模プロジェクトを 0.5 秒で把握し、Claude/Cursor に実際のコードを読ませる**
 
-[![CI](https://github.com/pirua-game/gdep/actions/workflows/ci.yml/badge.svg)](https://github.com/pirua-game/gdep/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/gdep)](https://pypi.org/project/gdep/)
 [![npm](https://img.shields.io/npm/v/gdep-mcp)](https://www.npmjs.com/package/gdep-mcp)
 

@@ -2,7 +2,6 @@
 
 **在 0.5 秒内理解 Unity/UE5/Axmol 大型项目，让 Claude/Cursor 真正读懂代码**
 
-[![CI](https://github.com/pirua-game/gdep/actions/workflows/ci.yml/badge.svg)](https://github.com/pirua-game/gdep/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/gdep)](https://pypi.org/project/gdep/)
 [![npm](https://img.shields.io/npm/v/gdep-mcp)](https://www.npmjs.com/package/gdep-mcp)
 

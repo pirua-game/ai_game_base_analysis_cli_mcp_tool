@@ -2,7 +2,6 @@
 
 **Unity · UE5 · Axmol 대형 프로젝트를 0.5초 만에 파악하고, Claude / Cursor가 실제 코드를 읽게 만드는 도구**
 
-[![CI](https://github.com/pirua-game/gdep/actions/workflows/ci.yml/badge.svg)](https://github.com/pirua-game/gdep/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/gdep)](https://pypi.org/project/gdep/)
 [![npm](https://img.shields.io/npm/v/gdep-mcp)](https://www.npmjs.com/package/gdep-mcp)
 
