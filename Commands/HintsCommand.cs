@@ -99,11 +99,17 @@ public class HintsCommand
     // Check current hint file status
     public void Show(string path)
     {
-        var candidates = new[]
+        // 1순위: path부터 위로 탐색하며 .gdep/.gdep-hints.json 탐색 (프로젝트 루트)
+        var candidates = new List<string>();
+        var dir = new DirectoryInfo(Path.GetFullPath(path));
+        while (dir != null)
         {
-            Path.Combine(path, ".gdep-hints.json"),
-            Path.Combine(Directory.GetCurrentDirectory(), ".gdep-hints.json"),
-        };
+            candidates.Add(Path.Combine(dir.FullName, ".gdep", ".gdep-hints.json"));
+            dir = dir.Parent;
+        }
+        // 2순위: 레거시 위치 (이전 버전 호환)
+        candidates.Add(Path.Combine(path, ".gdep-hints.json"));
+        candidates.Add(Path.Combine(Directory.GetCurrentDirectory(), ".gdep-hints.json"));
 
         foreach (var hintPath in candidates)
         {

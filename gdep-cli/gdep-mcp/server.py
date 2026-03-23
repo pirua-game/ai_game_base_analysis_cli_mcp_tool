@@ -42,6 +42,10 @@ from gdep_mcp.tools.analyze_impact_and_risk import run as _impact_run
 from gdep_mcp.tools.explore_class_semantics import run as _semantics_run
 from gdep_mcp.tools.inspect_architectural_health import run as _health_run
 from gdep_mcp.tools.trace_gameplay_flow import run as _flow_run
+from gdep_mcp.tools.suggest_test_scope import run as _test_scope_run
+from gdep_mcp.tools.suggest_lint_fixes import run as _lint_fixes_run
+from gdep_mcp.tools.summarize_project_diff import run as _diff_summary_run
+from gdep_mcp.tools.analyze_axmol_events import run as _axmol_events_run
 
 # ── 추가 분석 모듈 (3~7단계 기능) — 로드 실패해도 서버는 기동됨 ──
 try:
@@ -274,6 +278,126 @@ def execute_gdep_cli(args: list[str]) -> str:
         return "Error: Command timed out after 180 seconds."
     except Exception as e:
         return f"Failed to execute CLI command: {e}"
+
+
+# ════════════════════════════════════════════════════════════════
+# TEST SCOPE TOOL
+# ════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+def suggest_test_scope(project_path: str, class_name: str, depth: int = 3) -> str:
+    """
+    Suggest which test files need to run when a specific class is modified.
+
+    USE THIS TOOL WHEN:
+    - User asks "what tests do I need to run after changing class X?"
+    - User asks "which tests cover class X?"
+    - PR review: determine the minimal test set for a change
+    - CI automation: generate a targeted test-file list programmatically
+    - User says "I'm about to modify X, what should I test?"
+
+    Performs reverse-dependency analysis (like analyze_impact_and_risk) and then
+    filters the affected class list to test files only, using engine-specific patterns:
+      - Unity / .NET : *Test*.cs  *Tests.cs  *Spec.cs  or  Tests/ directory
+      - UE5          : *Spec.cpp  *Test*.cpp            or  Tests/ Specs/ directory
+      - C++          : *test*.cpp *spec*.cpp test_*.cpp or  tests/ directory
+
+    Returns:
+    - Number of directly affected classes
+    - List of test files that cover the affected scope, with engine tag and matched class
+
+    Args:
+        project_path: Absolute path to Scripts (Unity) or Source (UE5) folder.
+        class_name:   Class to analyze. E.g. "BattleManager", "APlayerCharacter"
+        depth:        Reverse-dependency tracing depth (default 3).
+    """
+    return _test_scope_run(project_path, class_name, depth)
+
+
+# ════════════════════════════════════════════════════════════════
+# LINT FIX TOOL
+# ════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+def suggest_lint_fixes(project_path: str, rule_ids: list[str] | None = None) -> str:
+    """Run linter and return actionable code fix suggestions for detected anti-patterns.
+
+    Goes beyond reporting — provides concrete code snippets for each fixable issue.
+    Currently supports: UNI-PERF-001, UNI-PERF-002, UE5-BASE-001, UNI-ASYNC-001.
+
+    USE THIS TOOL WHEN:
+    - User asks 'how do I fix these lint warnings?'
+    - After analyze_impact_and_risk reveals anti-patterns
+    - Pre-PR cleanup: user wants concrete steps, not just a list
+
+    Args:
+        project_path: Absolute path to project root or Scripts/Source directory.
+        rule_ids: Optional list of rule IDs to filter (e.g. ['UNI-PERF-001']).
+    """
+    return _lint_fixes_run(project_path, rule_ids=rule_ids)
+
+
+# ════════════════════════════════════════════════════════════════
+# DIFF SUMMARY TOOL
+# ════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+def summarize_project_diff(project_path: str,
+                            commit_ref: str | None = None) -> str:
+    """
+    Analyze git diff and summarize the architectural impact of changes.
+
+    USE THIS TOOL WHEN:
+    - User asks "what does this PR do to the codebase architecture?"
+    - User asks "does this change introduce new circular dependencies?"
+    - User asks "is this commit risky from an architecture standpoint?"
+    - PR review: need to understand structural impact, not just file changes
+    - After refactoring: verify circular references were resolved
+
+    Returns:
+    - Number of changed files
+    - New vs resolved circular references (net change)
+    - High-coupling classes involved in new cycles (blast-radius warning)
+    - Actionable review recommendations
+
+    Args:
+        project_path: Absolute path to project root or Scripts/Source directory.
+        commit_ref:   Git ref to diff against (e.g. "HEAD~1", "main", a commit SHA).
+                      Defaults to "HEAD~1".
+
+    Note: Currently supports Unity / C# projects. For UE5/C++ use inspect_architectural_health.
+    """
+    return _diff_summary_run(project_path, commit_ref=commit_ref)
+
+
+# ════════════════════════════════════════════════════════════════
+# AXMOL-SPECIFIC TOOLS
+# ════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+def analyze_axmol_events(project_path: str,
+                          class_name: str | None = None) -> str:
+    """
+    Scan an Axmol project for EventDispatcher and scheduler callback bindings.
+
+    USE THIS TOOL WHEN:
+    - User asks "which callbacks does this Axmol class register?"
+    - User asks "where is this method wired as an event callback?"
+    - Debugging event listener leaks or unexpected callback invocations
+    - Reviewing which classes opt in to the scheduler (scheduleUpdate)
+
+    Detects:
+    - addEventListenerWithSceneGraphPriority / addEventListenerWithFixedPriority
+    - CC_CALLBACK_0/1/2/3(ClassName::method, this) macro bindings
+    - schedule / scheduleOnce with CC_SCHEDULE_SELECTOR(ClassName::method)
+    - scheduleUpdate() registrations (implicit update() callback)
+
+    Args:
+        project_path: Absolute path to Axmol project root or Classes/ directory.
+        class_name:   Optional class name to filter results.
+                      If None, returns all bindings in the project.
+    """
+    return _axmol_events_run(project_path, class_name)
 
 
 # ════════════════════════════════════════════════════════════════
@@ -550,6 +674,44 @@ def analyze_ue5_blueprint_mapping(project_path: str,
         return format_full_project_map(bp_map, cpp_class)
     except Exception as e:
         return f"[analyze_ue5_blueprint_mapping] Error: {e}"
+
+
+@mcp.tool()
+def get_architecture_advice(project_path: str,
+                             focus_class: str | None = None) -> str:
+    """
+    Diagnose the architecture of a game project and suggest improvements.
+
+    Combines scan (coupling/cycles/dead-code) + lint (anti-patterns) +
+    impact analysis for the highest-risk class into a single advice report.
+
+    If an LLM is configured (gdep config llm), the report is enriched with
+    natural-language advice from the model. Results are cached in
+    .gdep/cache/advice.md and reused until project metrics change.
+
+    USE THIS TOOL WHEN:
+    - User asks "what is the technical debt in this project?"
+    - User asks "what should I refactor first?"
+    - User asks "diagnose the architecture problems"
+    - User asks "give me refactoring priorities"
+    - User wants a high-level overview before starting a large change
+
+    Args:
+        project_path: Absolute path to the project root or source directory.
+        focus_class:  Optional class name to center the advice around.
+                      Impact analysis will pivot on this class.
+                      If None, the highest-coupling class is used automatically.
+    """
+    try:
+        from gdep.detector import detect
+        from gdep import runner
+        profile = detect(project_path)
+        result = runner.advise(profile, focus_class=focus_class)
+        if not result.ok:
+            return f"[get_architecture_advice] Error: {result.error_message}"
+        return result.stdout
+    except Exception as e:
+        return f"[get_architecture_advice] Error: {e}"
 
 
 # ════════════════════════════════════════════════════════════════

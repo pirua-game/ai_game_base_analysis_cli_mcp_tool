@@ -509,11 +509,11 @@ def _summarize_describe(stdout: str) -> str:
 
 def ensure_hints(scripts_path: str) -> str | None:
     from pathlib import Path
-    hints_path = Path(scripts_path) / ".gdep-hints.json"
+    profile    = detect(scripts_path)
+    hints_path = Path(profile.root) / ".gdep" / ".gdep-hints.json"
     if hints_path.exists():
         return None
-    profile = detect(scripts_path)
-    result  = runner.hints_generate(profile)
+    result = runner.hints_generate(profile)
     return str(hints_path) if (result.ok and hints_path.exists()) else None
 
 

@@ -7,8 +7,8 @@
 > - **UE5**：ProjectZ / Lyra（大规模示例，含自定义 Zombie）
 > - **UE5 GAS**：HackAndSlash 作品集（32 文件 / 31 类）
 >
-> **MCP 工具现况（第 27 步为准）：共 13 个**  
-> 通用 4 个 + Raw CLI 1 个 + Unity 专用 2 个 + UE5 专用 5 个
+> **MCP 工具现况（第 42 步为准）：共 18 个**
+> 通用 9 个 + Unity 专用 2 个 + UE5 专用 5 个 + Axmol 专用 1 个 + Raw CLI 1 个
 
 ---
 

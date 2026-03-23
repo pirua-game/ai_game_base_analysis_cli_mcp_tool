@@ -113,11 +113,17 @@ public class MethodCallAnalyzer
     // 힌트 파일을 로드 (없으면 빈 힌트로 진행)
     public void LoadHints(string scanPath)
     {
-        var candidates = new[]
+        // 1순위: scanPath부터 위로 탐색하며 .gdep/.gdep-hints.json 탐색 (프로젝트 루트)
+        var candidates = new List<string>();
+        var dir = new DirectoryInfo(Path.GetFullPath(scanPath));
+        while (dir != null)
         {
-            Path.Combine(scanPath, ".gdep-hints.json"),
-            Path.Combine(Directory.GetCurrentDirectory(), ".gdep-hints.json"),
-        };
+            candidates.Add(Path.Combine(dir.FullName, ".gdep", ".gdep-hints.json"));
+            dir = dir.Parent;
+        }
+        // 2순위: 레거시 위치 (이전 버전 호환)
+        candidates.Add(Path.Combine(scanPath, ".gdep-hints.json"));
+        candidates.Add(Path.Combine(Directory.GetCurrentDirectory(), ".gdep-hints.json"));
 
         foreach (var path in candidates)
         {

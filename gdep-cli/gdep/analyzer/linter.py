@@ -20,6 +20,49 @@ class LintResult:
     method_name: str = ""
     file_path: str = ""
     suggestion: str = ""
+    fix_suggestion: str | None = None
+
+
+def _make_unity_fix(rule_id: str, method_name: str) -> str | None:
+    """Generate a code fix template for Unity lint rules."""
+    if rule_id == "UNI-PERF-001":
+        return (
+            f"// 1. Declare a private field in the class:\n"
+            f"private ComponentType _cachedComponent;\n"
+            f"\n"
+            f"// 2. Cache the reference in Awake() or Start():\n"
+            f"void Awake()\n"
+            f"{{\n"
+            f"    _cachedComponent = GetComponent<ComponentType>();\n"
+            f"}}\n"
+            f"\n"
+            f"// 3. Use the cached reference in {method_name or 'Update'}():\n"
+            f"void {method_name or 'Update'}()\n"
+            f"{{\n"
+            f"    // Replace: GetComponent<ComponentType>()\n"
+            f"    // With:    _cachedComponent\n"
+            f"}}"
+        )
+    if rule_id == "UNI-PERF-002":
+        return (
+            f"// Move Instantiate / new calls OUT of {method_name or 'Update'}().\n"
+            f"// Options:\n"
+            f"//  A) Object Pooling — pre-instantiate in Awake/Start, reuse objects\n"
+            f"//  B) Spawn on demand from an event, not every frame\n"
+            f"\n"
+            f"// Example pooling pattern:\n"
+            f"private Queue<GameObject> _pool = new Queue<GameObject>();\n"
+            f"\n"
+            f"void Awake()\n"
+            f"{{\n"
+            f"    for (int i = 0; i < 10; i++)\n"
+            f"        _pool.Enqueue(Instantiate(prefab));\n"
+            f"}}\n"
+            f"\n"
+            f"GameObject GetFromPool() => _pool.Count > 0 ? _pool.Dequeue() : Instantiate(prefab);"
+        )
+    return None
+
 
 class Linter:
     def __init__(self):
@@ -100,7 +143,18 @@ class Linter:
                     class_name=cls.name,
                     method_name=func.name,
                     file_path=func.source_file or cls.source_file,
-                    suggestion=f"Ensure {super_call}(...) is called to maintain engine logic."
+                    suggestion=f"Ensure {super_call}(...) is called to maintain engine logic.",
+                    fix_suggestion=(
+                        f"// Add at the TOP of {func.name}() body:\n"
+                        f"Super::{func.name}(...);\n"
+                        f"\n"
+                        f"// Example:\n"
+                        f"void {cls.name}::{func.name}(...)\n"
+                        f"{{\n"
+                        f"    Super::{func.name}(...);\n"
+                        f"    // ... existing logic ...\n"
+                        f"}}"
+                    )
                 ))
 
     def _check_ue5_gas_patterns(self, cls: UE5Class):
@@ -248,7 +302,8 @@ class Linter:
                 class_name=r.get("class", ""),
                 method_name=r.get("method", ""),
                 file_path=r.get("file", ""),
-                suggestion=r.get("suggestion", "")
+                suggestion=r.get("suggestion", ""),
+                fix_suggestion=_make_unity_fix(r.get("ruleId", ""), r.get("method", ""))
             ))
 
         # Python-side Unity checks (coroutine patterns)
@@ -309,7 +364,20 @@ class Linter:
                             method_name=method_name,
                             file_path=str(cs_file),
                             suggestion="Add 'yield return null' or 'yield return new WaitForSeconds(...)' "
-                                       "inside the while(true) loop body."
+                                       "inside the while(true) loop body.",
+                            fix_suggestion=(
+                                f"// Inside the while(true) loop in {method_name}(), add yield:\n"
+                                f"\n"
+                                f"IEnumerator {method_name}()\n"
+                                f"{{\n"
+                                f"    while (true)\n"
+                                f"    {{\n"
+                                f"        // ... existing logic ...\n"
+                                f"        yield return null;  // <-- ADD THIS LINE\n"
+                                f"        // or: yield return new WaitForSeconds(0.1f);\n"
+                                f"    }}\n"
+                                f"}}"
+                            )
                         ))
                         break  # one warning per method is enough
 
@@ -327,5 +395,139 @@ class Linter:
                         suggestion=f"Cache the result of {op_name} in Start/Awake and "
                                    f"reference the cached value inside the Coroutine."
                     ))
+
+        return results
+
+    # ── Axmol / Generic C++ checks ───────────────────────────────
+
+    def lint_axmol(self, source_path: str) -> list[LintResult]:
+        """
+        [AXM] Axmol engine-specific anti-pattern checks.
+        Scans .cpp files for AXM-PERF-001, AXM-MEM-001, AXM-EVENT-001.
+        Non-Axmol C++ files will simply produce zero matches.
+        """
+        import os
+        from pathlib import Path as _Path
+
+        results: list[LintResult] = []
+        src_root = _Path(source_path)
+
+        _re_impl        = re.compile(r'\b(\w+)::\w+\s*\(')
+        _re_update_impl = re.compile(r'(\w+)::update\s*\([^{;]*\)\s*\{')
+        _re_child_search = re.compile(r'\b(getChildByName|getChildByTag)\s*\(')
+        _re_retain      = re.compile(r'->retain\s*\(\s*\)')
+        _re_release     = re.compile(r'->release\s*\(\s*\)')
+        _re_add_listener = re.compile(
+            r'addEventListenerWith(?:SceneGraphPriority|FixedPriority)\s*\('
+        )
+        _re_remove_listener = re.compile(
+            r'(?:removeEventListeners?|removeAllEventListeners)\s*\('
+        )
+        _re_class_def   = re.compile(r'class\s+(\w+)')
+
+        _IGNORE_DIRS = {
+            "build", "cmake-build-debug", "cmake-build-release",
+            ".git", "node_modules", ".gdep", "ax", "cocos2d",
+        }
+
+        def _should_skip(p: _Path) -> bool:
+            return any(part in _IGNORE_DIRS for part in p.parts)
+
+        def _extract_update_bodies(text: str) -> list[tuple[str, str]]:
+            """Return [(class_name, body_text)] for each ClassName::update() impl."""
+            found = []
+            for um in _re_update_impl.finditer(text):
+                cls = um.group(1)
+                # brace-count to extract body
+                i = text.find('{', um.start())
+                if i == -1:
+                    continue
+                depth, j = 0, i
+                while j < len(text):
+                    if text[j] == '{':
+                        depth += 1
+                    elif text[j] == '}':
+                        depth -= 1
+                        if depth == 0:
+                            found.append((cls, text[i + 1:j]))
+                            break
+                    j += 1
+            return found
+
+        def _infer_class(text: str) -> str:
+            # Try ClassName:: implementation pattern first
+            impl = _re_impl.search(text)
+            if impl:
+                return impl.group(1)
+            cm = _re_class_def.search(text)
+            return cm.group(1) if cm else ""
+
+        for cpp_file in src_root.rglob("*.cpp"):
+            if _should_skip(cpp_file):
+                continue
+            try:
+                text = cpp_file.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+
+            cls_name = _infer_class(text)
+
+            # AXM-PERF-001: getChildByName/getChildByTag inside update()
+            for update_cls, body in _extract_update_bodies(text):
+                cm = _re_child_search.search(body)
+                if cm:
+                    results.append(LintResult(
+                        rule_id="AXM-PERF-001",
+                        severity="Warning",
+                        message=(
+                            f"'{cm.group(1)}' called inside update() -- "
+                            "O(N) node search every frame."
+                        ),
+                        class_name=update_cls,
+                        method_name="update",
+                        file_path=str(cpp_file),
+                        suggestion=(
+                            "Cache the child node pointer in onEnter() or init() "
+                            "and store it as a member variable."
+                        ),
+                    ))
+
+            # AXM-MEM-001: retain() without release() in same file
+            has_retain  = bool(_re_retain.search(text))
+            has_release = bool(_re_release.search(text))
+            if has_retain and not has_release:
+                results.append(LintResult(
+                    rule_id="AXM-MEM-001",
+                    severity="Warning",
+                    message=(
+                        f"retain() called but no release() found in "
+                        f"{cpp_file.name}. Possible memory leak."
+                    ),
+                    class_name=cls_name or cpp_file.stem,
+                    file_path=str(cpp_file),
+                    suggestion=(
+                        "Ensure every retain() has a matching release() "
+                        "in the destructor or cleanup()."
+                    ),
+                ))
+
+            # AXM-EVENT-001: addEventListenerWith* without removeEventListener
+            has_add    = bool(_re_add_listener.search(text))
+            has_remove = bool(_re_remove_listener.search(text))
+            if has_add and not has_remove:
+                results.append(LintResult(
+                    rule_id="AXM-EVENT-001",
+                    severity="Info",
+                    message=(
+                        f"addEventListenerWith* found in {cpp_file.name} "
+                        "but no removeEventListener* call detected."
+                    ),
+                    class_name=cls_name or cpp_file.stem,
+                    file_path=str(cpp_file),
+                    suggestion=(
+                        "Call _eventDispatcher->removeEventListeners* "
+                        "in onExit() or cleanup() to prevent stale listeners."
+                    ),
+                ))
 
         return results

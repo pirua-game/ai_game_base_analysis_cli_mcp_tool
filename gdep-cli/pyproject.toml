@@ -23,7 +23,9 @@ dependencies = [
     "uvicorn",
     "tree-sitter",
     "tree-sitter-cpp",
-    "mcp[cli]>=1.0"
+    "mcp[cli]>=1.0",
+    "watchdog>=3.0",
+    "websockets>=12.0"
 ]
 
 [project.urls]

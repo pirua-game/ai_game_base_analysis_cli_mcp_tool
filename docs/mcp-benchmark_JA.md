@@ -7,8 +7,8 @@
 > - **UE5**: ProjectZ / Lyra (大規模サンプル、カスタム Zombie 含む)
 > - **UE5 GAS**: HackAndSlash ポートフォリオ (32 ファイル / 31 クラス)
 >
-> **MCP ツール現況 (ステップ 27 時点): 13 個**  
-> 共通 4 個 + Raw CLI 1 個 + Unity 専用 2 個 + UE5 専用 5 個
+> **MCP ツール現況 (ステップ 42 時点): 18 個**
+> 共通 9 個 + Unity 専用 2 個 + UE5 専用 5 個 + Axmol 専用 1 個 + Raw CLI 1 個
 
 ---
 

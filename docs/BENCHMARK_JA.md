@@ -123,6 +123,20 @@
 
 ---
 
+## ケース G — Web UI 新機能レスポンス時間 (ステップ 42)
+
+> FastAPI エンドポイント直接呼び出し基準。テスト環境: macOS (M シリーズ)、Unity TrumpCard。
+
+| 機能 | エンドポイント | Cold | Warm | 備考 |
+|------|-------------|------|------|------|
+| 🧪 テスト範囲 | `POST /project/test-scope` | ~22 s | **~1-2 s** | impact BFS + ファイルスキャン含む |
+| 🏗️ アーキテクチャアドバイザー | `POST /project/advise` | ~1 s | **0.12 s** | scan+lint キャッシュ活用 |
+| 📋 Lint Fix スキャン | `POST /project/lint-fix` | ~22 s | **~1-2 s** | lint JSON + fix_suggestion フィルタ |
+| 📊 Diff 要約 | `POST /project/diff-summary` | ~5 s | **~5 s** | subprocess gdep diff (キャッシュ無し) |
+| 🪓 Axmol Events | `POST /engine/axmol/events` | **< 0.5 s** | **< 0.5 s** | C++ 正規表現スキャン |
+
+---
+
 ## 残存ボトルネック
 
 | 項目 | 現状 | 改善案 | 期待効果 |

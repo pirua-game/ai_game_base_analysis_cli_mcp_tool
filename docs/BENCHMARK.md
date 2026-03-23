@@ -123,6 +123,23 @@
 
 ---
 
+## Case G — Web UI New Feature Response Times (Stage 42)
+
+> Direct FastAPI endpoint calls. Test environment: macOS (M-series), Unity TrumpCard project.
+
+| Feature | Endpoint | Cold | Warm | Notes |
+|---------|----------|------|------|-------|
+| 🧪 Test Scope | `POST /project/test-scope` | ~22 s | **~1-2 s** | Includes impact BFS + file scan |
+| 🏗️ Architecture Advisor | `POST /project/advise` | ~1 s | **0.12 s** | Uses scan+lint cache |
+| 📋 Lint Fix Scan | `POST /project/lint-fix` | ~22 s | **~1-2 s** | Lint JSON parse + fix_suggestion filter |
+| 📊 Diff Summary | `POST /project/diff-summary` | ~5 s | **~5 s** | subprocess gdep diff (no cache) |
+| 🪓 Axmol Events | `POST /engine/axmol/events` | **< 0.5 s** | **< 0.5 s** | C++ regex scan |
+
+> **Warm baseline**: `.gdep/cache/` disk cache preserved. `advise` returns in 0.12s with LLM disabled.
+> **Diff summary**: No cache benefit due to subprocess nature. Ranges 2-10s depending on git history.
+
+---
+
 ## Remaining Bottlenecks
 
 | Item | Status | Improvement | Expected |

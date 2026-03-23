@@ -1,12 +1,12 @@
 # 🎮 gdep — Game Codebase Analysis Tool
 
-**Understand a Unity/UE5 project in 0.5 seconds. Make Claude and Cursor read the actual code.**
+**Understand a Unity/UE5/Axmol project in 0.5 seconds. Make Claude and Cursor read the actual code.**
 
 [![CI](https://github.com/pirua-game/gdep/actions/workflows/ci.yml/badge.svg)](https://github.com/pirua-game/gdep/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/gdep)](https://pypi.org/project/gdep/)
 [![npm](https://img.shields.io/npm/v/gdep-mcp)](https://www.npmjs.com/package/gdep-mcp)
 
-> *"If I modify this class, what breaks?"* — answered in 3 seconds, zero hallucinations.  
+> *"If I modify this class, what breaks?"* — answered in 3 seconds, zero hallucinations.
 > Measured: **100% accuracy** with MCP (code-based facts) vs hallucinations without
 
 **Read this in other languages:**
@@ -60,7 +60,7 @@ npm install -g gdep-mcp
 }
 ```
 
-That's it. Your AI now has 13 game-engine-aware tools available on every conversation.
+That's it. Your AI now has **18** game-engine-aware tools available on every conversation.
 
 ### What changes with MCP
 
@@ -69,7 +69,7 @@ Without gdep:  "CombatCore probably has some Manager dependencies..." ← halluc
 With gdep:     Direct deps: 2 · Indirect: 200+ UI classes · Asset: prefabs/UI/combat.prefab
 ```
 
-### 13 MCP Tools at a glance
+### 18 MCP Tools at a glance
 
 | Tool | When to use |
 |------|-------------|
@@ -78,9 +78,14 @@ With gdep:     Direct deps: 2 · Indirect: 200+ UI classes · Asset: prefabs/UI/
 | `trace_gameplay_flow` | Trace C++ → Blueprint call chains |
 | `inspect_architectural_health` | Tech debt audit |
 | `explore_class_semantics` | Unfamiliar class deep-dive |
+| `suggest_test_scope` | Which test files to run after modifying a class |
+| `suggest_lint_fixes` | Lint issues with code fix suggestions (dry-run) |
+| `summarize_project_diff` | Architecture-level summary of a git diff |
+| `get_architecture_advice` | Full project diagnosis + LLM-powered advice |
 | `execute_gdep_cli` | Raw access to all CLI features |
 | `find_unity_event_bindings` | Inspector-wired methods (invisible in code search) |
 | `analyze_unity_animator` | Animator state machine structure |
+| `analyze_axmol_events` | Axmol EventDispatcher/Scheduler binding map |
 | `analyze_ue5_gas` | GAS Abilities / Effects / Tags / ASC |
 | `analyze_ue5_behavior_tree` | BehaviorTree asset structure |
 | `analyze_ue5_state_tree` | StateTree asset structure |
@@ -124,6 +129,7 @@ cd gdep-cli && pip install -e .
 gdep detect {path}                          # auto-detect engine
 gdep scan {path} --circular --top 15        # structure overview
 gdep init {path}                            # create .gdep/AGENTS.md for AI agents
+gdep advise {path}                          # architecture diagnosis + advice
 ```
 
 After `gdep init`, Claude / Cursor / Gemini automatically read the project context and
@@ -140,7 +146,10 @@ know which gdep tools to call for which questions.
 | `describe` | Class detail + Blueprint impl + AI summary | Unfamiliar class, code review |
 | `flow` | Method call chain (C++→BP boundary) | Bug tracing, flow analysis |
 | `impact` | Change impact reverse-trace | Safety check before refactoring |
-| `lint` | Game-specific anti-pattern scan | Quality check before PR |
+| `test-scope` | Test files to run after modifying a class | Before merging, CI planning |
+| `watch` | Live file-change monitor (impact+test+lint) | During active development |
+| `lint` | Game-specific anti-pattern scan (+ `--fix`) | Quality check before PR |
+| `advise` | Full architecture diagnosis + LLM advice | Architecture review, tech debt |
 | `graph` | Dependency graph export | Documentation, visualization |
 | `diff` | Dependency diff before/after commit | PR review, CI gate |
 | `init` | Create AI Agent context file | **AI coding assistant setup** |
@@ -179,7 +188,41 @@ gdep flow {path} --class <Class> --method <Method> [--depth N]
     └── BP_GA_HeavyAttack_C.K2_ActivateAbility ○ [BP]
 ```
 
-### lint — 13 game-engine anti-pattern rules
+### test-scope — find test files affected by a class change
+
+```bash
+gdep test-scope {path} <ClassName>
+gdep test-scope {path} <ClassName> --format json   # CI pipeline output
+gdep test-scope {path} <ClassName> --depth 5       # broader search
+```
+
+### watch — live monitor for file changes
+
+```bash
+gdep watch {path}                        # watch whole project
+gdep watch {path} --class CombatManager  # only watch files related to class
+gdep watch {path} --debounce 2.0         # adjust debounce (seconds)
+```
+
+On every save, instantly prints: impact count · test file count · lint warnings.
+
+### advise — architecture diagnosis
+
+```bash
+gdep advise {path}                        # full project diagnosis
+gdep advise {path} --focus CombatManager  # class-focused diagnosis
+gdep advise {path} --format json          # CI/MCP output
+```
+
+Without LLM configured: structured data report (cycles/coupling/dead-code/lint).
+With LLM configured: IMMEDIATE / MID-TERM / LONG-TERM natural-language advice.
+
+### lint — 16 game-engine anti-pattern rules
+
+```bash
+gdep lint {path}                # scan
+gdep lint {path} --fix          # scan + code fix suggestions (dry-run, no file changes)
+```
 
 | Rule ID | Engine | Description |
 |---------|--------|-------------|
@@ -195,6 +238,9 @@ gdep flow {path} --class <Class> --method <Method> [--depth N]
 | `UE5-GAS-003` | UE5 | Excessive BlueprintCallable (>10) |
 | `UE5-GAS-004` | UE5 | Missing const on BlueprintPure method |
 | `UE5-NET-001` | UE5 | Replicated property without ReplicatedUsing callback |
+| `AXM-PERF-001` | Axmol | getChildByName/Tag in update() |
+| `AXM-MEM-001` | Axmol | retain() without release() |
+| `AXM-EVENT-001` | Axmol | addEventListenerWith* without removeEventListener |
 | `GEN-ARCH-001` | Common | Circular dependency |
 
 ---
@@ -205,7 +251,7 @@ gdep flow {path} --class <Class> --method <Method> [--depth N]
 |--------|---------------|---------------|-----------|-------------|
 | Unity (C#) | ✅ | ✅ | ✅ Prefab/Scene | UnityEvent, Animator |
 | Unreal Engine 5 | ✅ UCLASS/USTRUCT/UENUM | ✅ C++→BP | ✅ Blueprint/Map | GAS, BP mapping, BT/ST, ABP/Montage |
-| Cocos2d-x (C++) | ✅ | ✅ | — | |
+| Axmol / Cocos2d-x (C++) | ✅ Tree-sitter | ✅ | — | EventDispatcher/Scheduler bindings |
 | .NET (C#) | ✅ | ✅ | — | |
 | Generic C++ | ✅ | ✅ | — | |
 
@@ -233,8 +279,16 @@ gdep flow {path} --class UARGameplayAbility_Dash --method ActivateAbility
 
 ```bash
 gdep impact {path} CombatCore --depth 5
-gdep lint {path}
+gdep test-scope {path} CombatCore
+gdep lint {path} --fix
 gdep diff {path} --commit HEAD
+```
+
+### Architecture review
+
+```bash
+gdep advise {path}
+gdep advise {path} --focus BattleManager
 ```
 
 ### CI quality gate
@@ -242,6 +296,14 @@ gdep diff {path} --commit HEAD
 ```bash
 gdep diff . --commit HEAD~1 --fail-on-cycles
 gdep lint . --format json > lint_report.json
+gdep test-scope . ChangedClass --format json > test_scope.json
+```
+
+### Active development (live feedback)
+
+```bash
+gdep watch {path} --class CombatManager
+# → On every save: impact count · test files · lint warnings
 ```
 
 ---
@@ -258,7 +320,7 @@ Detection priority: `$GDEP_DLL` env → `publish_dll/gdep.dll` → `publish/gdep
 
 ---
 
-*MCP Server → [gdep-cli/gdep-mcp/README.md](./gdep-cli/gdep-mcp/README.md)*  
-*CI/CD Integration → [docs/ci-integration.md](./docs/ci-integration.md)*  
-*Performance Benchmark → [docs/BENCHMARK.md](./docs/BENCHMARK.md)*  
+*MCP Server → [gdep-cli/gdep-mcp/README.md](./gdep-cli/gdep-mcp/README.md)*
+*CI/CD Integration → [docs/ci-integration.md](./docs/ci-integration.md)*
+*Performance Benchmark → [docs/BENCHMARK.md](./docs/BENCHMARK.md)*
 *MCP Token & Accuracy → [docs/mcp-benchmark.md](./docs/mcp-benchmark.md)*

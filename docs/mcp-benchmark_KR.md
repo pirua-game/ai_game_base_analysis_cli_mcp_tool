@@ -7,10 +7,11 @@
 > - **UE5**: ProjectZ / Lyra (대규모 샘플, Zombie 커스텀 포함)
 > - **UE5 GAS**: HackAndSlash 포트폴리오 (32파일 / 31클래스)
 >
-> **MCP 도구 현황 (27단계 기준): 총 16개**
-> 공통 8개 + Unity 전용 2개 (`find_prefab_refs`, `unity_events`)
-> UE5 전용 6개 (`find_blueprint_refs`, `analyze_ue5_gas`, `analyze_animation`,
->              `analyze_behavior_tree`, `analyze_state_tree`, `blueprint_mapping`)
+> **MCP 도구 현황 (42단계 기준): 총 18개**
+> 공통 9개 + Unity 전용 2개 (`find_unity_event_bindings`, `analyze_unity_animator`)
+> UE5 전용 5개 (`analyze_ue5_gas`, `analyze_ue5_animation`, `analyze_ue5_behavior_tree`, `analyze_ue5_state_tree`, `analyze_ue5_blueprint_mapping`)
+> Axmol 전용 1개 (`analyze_axmol_events`)
+> Raw CLI 1개 (`execute_gdep_cli`)
 
 ---
 
@@ -234,6 +235,90 @@ def _safe_echo(msg: str, **kwargs):
 **영향 범위:** CLI 직접 실행 전반 (MCP 경유 시는 정상 동작 — MCP 서버가 별도 인코딩 처리)
 
 **상태:** ✅ 수정 완료 (`gdep-cli/gdep/cli.py`)
+
+---
+
+## 부록 C: 신규 도구 (36~42단계) 활용 시나리오
+
+### suggest_test_scope — 수정 전 테스트 범위 산정
+
+```
+질문: "BattleCore 수정 전에 어떤 테스트 파일을 돌려야 해?"
+→ suggest_test_scope(project_path, "BattleCore")
+
+출력 예시 (Unity TrumpCard):
+  🧪 Test Scope for BattleCore (depth=3)
+  영향 클래스: 389개
+  매칭 테스트: 3개
+    ✓ Tests/BattleCoreTest.cs  [BattleCore]
+    ✓ Tests/CombatSystemSpec.cs  [CombatSystem]
+    ✓ Tests/Integration/GameFlowTest.cs  [test dir]
+```
+
+**활용**: CI 파이프라인 연동 (JSON 포맷) — 변경된 클래스 기준 선택적 테스트 실행.
+
+---
+
+### get_architecture_advice — 아키텍처 종합 진단
+
+```
+질문: "이 프로젝트의 아키텍처 문제점이 뭐야?"
+→ get_architecture_advice(project_path)
+
+출력 예시 (Axmol FantasyClicker):
+  [Current State]
+    Classes: 11  Dead: 2  Cycles: 0  Lint: 0
+    High-coupling TOP 3: DFBattleManager(4), DFObject(4), DFMonster(2)
+
+  [Data-driven Findings]
+    1. High-coupling: DFBattleManager (in-degree=4) → SRP 위반 의심
+    2. Orphan classes: 2 → DFEffect, DFTrench
+
+  Cache warm: 0.12s
+```
+
+**활용**: PR 전 아키텍처 리뷰 자동화. LLM 설정 시 IMMEDIATE/MID-TERM/LONG-TERM 어드바이스 생성.
+
+---
+
+### suggest_lint_fixes — fix 코드 블록 제안
+
+```
+질문: "이 lint 이슈들 어떻게 고쳐야 해?"
+→ suggest_lint_fixes(project_path, rule_ids=["UNI-PERF-001"])
+
+출력 예시:
+  ### UNI-PERF-001 (2개 발견)
+  **EnemyController.Update** — Assets/Scripts/EnemyController.cs
+  > Update 내부에서 GetComponent 호출
+
+  ```
+  // Before (안티패턴):
+  void Update() { var rb = GetComponent<Rigidbody>(); ... }
+
+  // After (Fix):
+  Rigidbody _rb;
+  void Awake() { _rb = GetComponent<Rigidbody>(); }
+  void Update() { ... _rb ... }
+  ```
+```
+
+---
+
+### summarize_project_diff — PR 아키텍처 영향 요약
+
+```
+질문: "이 PR이 아키텍처에 어떤 영향을 주나?"
+→ summarize_project_diff(project_path, commit_ref="HEAD~1")
+
+출력 예시 (Unity TrumpCard):
+  ## PR 아키텍처 영향 요약
+  변경 파일: 1개
+  신규 순환참조: +13개  해소: -12개  순증가: +1개 (⚠️)
+
+  ### 고결합 클래스가 포함된 신규 순환참조
+  - PlayingCard (결합도 46) — 새 순환참조에 포함
+```
 
 ---
 

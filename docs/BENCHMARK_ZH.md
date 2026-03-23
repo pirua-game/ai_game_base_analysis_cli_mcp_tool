@@ -123,6 +123,20 @@
 
 ---
 
+## 场景 G — Web UI 新功能响应时间 (第 42 步)
+
+> 直接调用 FastAPI 端点基准。测试环境：macOS（M 系列），Unity TrumpCard 项目。
+
+| 功能 | 端点 | Cold | Warm | 备注 |
+|------|------|------|------|------|
+| 🧪 测试范围 | `POST /project/test-scope` | ~22 s | **~1-2 s** | 含 impact BFS + 文件扫描 |
+| 🏗️ 架构顾问 | `POST /project/advise` | ~1 s | **0.12 s** | 利用 scan+lint 缓存 |
+| 📋 Lint Fix 扫描 | `POST /project/lint-fix` | ~22 s | **~1-2 s** | lint JSON + fix_suggestion 过滤 |
+| 📊 Diff 摘要 | `POST /project/diff-summary` | ~5 s | **~5 s** | subprocess gdep diff（无缓存） |
+| 🪓 Axmol 事件 | `POST /engine/axmol/events` | **< 0.5 s** | **< 0.5 s** | C++ 正则表达式扫描 |
+
+---
+
 ## 剩余瓶颈
 
 | 项目 | 现状 | 改进方案 | 预期效果 |

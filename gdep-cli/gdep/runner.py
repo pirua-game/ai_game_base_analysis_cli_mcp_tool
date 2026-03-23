@@ -231,18 +231,19 @@ def _cs_fingerprint(src: str) -> str:
     return hashlib.md5("\n".join(mtimes).encode()).hexdigest()
 
 
-def _cs_cache_path(src: str) -> Path:
-    cache_dir = Path(src).resolve().parent / ".gdep" / "cache"
-    cache_dir.mkdir(exist_ok=True)
+def _cs_cache_path(profile: "ProjectProfile") -> Path:
+    cache_dir = Path(profile.root) / ".gdep" / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir / "cs_scan.json"
 
 
-def _load_cs_cache(src: str) -> dict | None:
-    cp = _cs_cache_path(src)
+def _load_cs_cache(profile: "ProjectProfile") -> dict | None:
+    cp = _cs_cache_path(profile)
     if not cp.exists():
         return None
     try:
         data = json.loads(cp.read_text(encoding="utf-8"))
+        src = _src(profile)
         if data.get("fingerprint") == _cs_fingerprint(src):
             return data.get("scan_result")
     except Exception:
@@ -250,9 +251,10 @@ def _load_cs_cache(src: str) -> dict | None:
     return None
 
 
-def _save_cs_cache(src: str, scan_result: dict) -> None:
+def _save_cs_cache(profile: "ProjectProfile", scan_result: dict) -> None:
     try:
-        cp = _cs_cache_path(src)
+        cp = _cs_cache_path(profile)
+        src = _src(profile)
         payload = {
             "fingerprint": _cs_fingerprint(src),
             "saved_at": time.time(),
@@ -284,7 +286,7 @@ def scan(profile: ProjectProfile, circular: bool = False,
 
     # ── mtime-based disk cache for C# scan (skips dotnet subprocess) ──
     if not include_refs and fmt != "json":
-        cached = _load_cs_cache(src)
+        cached = _load_cs_cache(profile)
         if cached:
             # Rebuild console output from cached data
             _rebuild_console = _format_cs_scan_console(cached, top, circular, dead_code)
@@ -306,7 +308,7 @@ def scan(profile: ProjectProfile, circular: bool = False,
 
     # Save scan result to disk cache (only for basic scan without refs)
     if not include_refs and result.ok and result.data:
-        _save_cs_cache(src, result.data)
+        _save_cs_cache(profile, result.data)
 
     # If caller wants console output, reconstruct it from JSON data
     if fmt != "json" and not include_refs and result.ok and result.data:
@@ -606,15 +608,497 @@ def diff(profile: ProjectProfile, commit: str | None = None,
     return run(args)
 
 
+# ── Test-scope helpers ────────────────────────────────────────
+
+_TEST_EXTENSIONS = {
+    ProjectKind.UNITY:  [".cs"],
+    ProjectKind.DOTNET: [".cs"],
+    ProjectKind.UNREAL: [".cpp", ".h"],
+    ProjectKind.CPP:    [".cpp", ".h"],
+}
+
+_TEST_DIR_NAMES = {"tests", "test", "specs", "spec", "unittests"}
+
+_TEST_STEM_KEYWORDS = {
+    ProjectKind.UNITY:  ["test", "tests", "spec"],
+    ProjectKind.DOTNET: ["test", "tests", "spec"],
+    ProjectKind.UNREAL: ["spec", "test"],
+    ProjectKind.CPP:    ["test", "spec"],
+}
+
+_TEST_STEM_PREFIX = {
+    ProjectKind.CPP:    ["test_"],
+    ProjectKind.UNREAL: ["test_"],
+}
+
+
+def _find_test_files(src: str, kind: "ProjectKind") -> list:
+    """Recursively scan src for test-pattern files. Returns list of Paths."""
+    root = Path(src)
+    exts = set(_TEST_EXTENSIONS.get(kind, [".cs", ".cpp", ".h"]))
+    keywords = _TEST_STEM_KEYWORDS.get(kind, ["test", "spec"])
+    prefixes = _TEST_STEM_PREFIX.get(kind, [])
+
+    results = []
+    stack = [root]
+    while stack:
+        d = stack.pop()
+        try:
+            with os.scandir(d) as it:
+                for entry in it:
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(Path(entry.path))
+                    elif entry.is_file():
+                        p = Path(entry.path)
+                        if p.suffix.lower() not in exts:
+                            continue
+                        stem_lower = p.stem.lower()
+                        in_test_dir = any(
+                            part.lower() in _TEST_DIR_NAMES
+                            for part in p.parts
+                        )
+                        name_is_test = (
+                            any(kw in stem_lower for kw in keywords)
+                            or any(stem_lower.startswith(px) for px in prefixes)
+                        )
+                        if in_test_dir or name_is_test:
+                            results.append(p)
+        except (PermissionError, OSError):
+            pass
+    return results
+
+
+def _parse_affected_classes(impact_text: str) -> set:
+    """Extract class names from impact tree text output.
+
+    Handles both C# output  (ClassName (file.cs))
+    and tree-prefix lines  (  ├── ClassName (file.cs)).
+    """
+    pattern = re.compile(r'(?:^|[├└│─\s]+)([A-Z][A-Za-z0-9_]+)(?:\s*\(|$)', re.MULTILINE)
+    _SKIP = {"RECURSIVE", "Assets", "Scripts", "Content", "Source", "Tests", "Specs"}
+    names: set = set()
+    for m in pattern.finditer(impact_text):
+        candidate = m.group(1)
+        if len(candidate) >= 3 and candidate not in _SKIP:
+            names.add(candidate)
+    return names
+
+
+def _engine_tag(kind: "ProjectKind") -> str:
+    tags = {
+        ProjectKind.UNITY:  "Unity",
+        ProjectKind.DOTNET: ".NET",
+        ProjectKind.UNREAL: "UE5",
+        ProjectKind.CPP:    "C++",
+    }
+    return tags.get(kind, "?")
+
+
+def _format_test_scope_console(target_class: str, depth: int,
+                                affected_count: int, matched: list,
+                                src: str) -> str:
+    src_root = Path(src)
+    lines = [
+        f"\n── Test Scope: {target_class} (Depth: {depth}) ──\n",
+        f"  직접 영향 클래스: {affected_count}개",
+        f"  테스트 파일 발견: {len(matched)}개\n",
+    ]
+    if not matched:
+        lines.append("  (테스트 파일 없음 — 새 테스트 작성을 권장합니다)")
+    else:
+        for i, item in enumerate(matched):
+            connector = "└──" if i == len(matched) - 1 else "├──"
+            try:
+                rel = Path(item["path"]).relative_to(src_root)
+                dir_part = str(rel.parent) if rel.parent != Path(".") else ""
+                fname = rel.name
+            except ValueError:
+                fname = Path(item["path"]).name
+                dir_part = ""
+            tag = item.get("engine", "?")
+            dir_display = f"{dir_part}/" if dir_part else ""
+            matched_cls = item.get("matched_class", "")
+            cls_hint = f"  ← {matched_cls}" if matched_cls else ""
+            lines.append(
+                f"  {connector} {fname:<40} [{tag}]  {dir_display}{cls_hint}"
+            )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def test_scope(profile: ProjectProfile, target_class: str,
+               depth: int = 3, fmt: str = "console") -> RunResult:
+    """Find test files to run when target_class is modified.
+
+    Steps:
+    1. Run impact() to get the BFS reverse-dependency tree.
+    2. Parse affected class names from the output.
+    3. Scan source dir for test-pattern files.
+    4. Match test files whose name references any affected class.
+    """
+    # 1. Impact analysis
+    impact_result = impact(profile, target_class, depth=depth)
+    if not impact_result.ok:
+        return impact_result
+
+    # 2. Parse affected classes
+    affected = _parse_affected_classes(impact_result.stdout)
+    affected.add(target_class)
+    affected_count = max(0, len(affected) - 1)
+
+    # 3. Find test files
+    src = _src(profile)
+    test_files = _find_test_files(src, profile.kind)
+
+    # 4. Match: test file stem contains an affected class name (or vice-versa)
+    matched: list = []
+    seen: set = set()
+    for tf in test_files:
+        stem_lower = tf.stem.lower()
+        best_match: str = ""
+        for cls in sorted(affected):
+            if cls.lower() in stem_lower or stem_lower in cls.lower():
+                best_match = cls
+                break
+        if not best_match and target_class.lower() in stem_lower:
+            best_match = target_class
+        # Include files in a Tests/ directory even without a specific class match
+        if not best_match:
+            in_test_dir = any(p.lower() in _TEST_DIR_NAMES for p in tf.parts)
+            if not in_test_dir:
+                continue  # skip: no class match and not in a test dir
+
+        key = str(tf)
+        if key not in seen:
+            seen.add(key)
+            matched.append({
+                "path": str(tf),
+                "matched_class": best_match,
+                "engine": _engine_tag(profile.kind),
+            })
+
+    # Sort: specific class matches first, then alphabetical
+    matched.sort(key=lambda x: (0 if x["matched_class"] else 1, x["path"]))
+
+    if fmt == "json":
+        data: dict = {
+            "target_class": target_class,
+            "depth": depth,
+            "affected_count": affected_count,
+            "test_file_count": len(matched),
+            "test_files": matched,
+        }
+        return RunResult(
+            ok=True,
+            stdout=json.dumps(data, indent=2, ensure_ascii=False),
+            stderr="",
+            data=data,
+        )
+
+    return RunResult(
+        ok=True,
+        stdout=_format_test_scope_console(
+            target_class, depth, affected_count, matched, src),
+        stderr="",
+    )
+
+
+# ── Architecture Advisor ──────────────────────────────────────
+
+def advise(profile: ProjectProfile,
+           focus_class: str | None = None,
+           fmt: str = "console") -> RunResult:
+    """Combine scan + lint + impact and return structured architecture advice.
+
+    If an LLM is configured (gdep config llm), the structured context is sent
+    to the LLM for natural-language advice.  Without an LLM config the function
+    returns the structured data-driven report directly -- still useful.
+
+    Cache: .gdep/cache/advice.md  (invalidated when scan summary changes)
+    """
+    src = Path(_src(profile))
+    cache_dir = Path(profile.root) / ".gdep" / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / "advice.md"
+
+    # 1. Scan
+    scan_res = scan(profile, circular=True, dead_code=True, fmt="json")
+    if not scan_res.ok:
+        return RunResult(ok=False, stdout="", stderr=f"[advise] scan failed: {scan_res.error_message}")
+
+    scan_data: dict = scan_res.data or {}
+    summary   = scan_data.get("summary", {})
+    coupling  = scan_data.get("coupling", [])   # [{name, score, file}]
+    dead_nodes = scan_data.get("deadNodes", []) # [{name, score, file}]
+    cycles    = scan_data.get("cycles", [])     # list of cycle lists/strs
+
+    # 2. Lint
+    lint_res = lint(profile, fmt="json")
+    try:
+        lint_issues: list = json.loads(lint_res.stdout) if lint_res.stdout else (lint_res.data or [])
+    except Exception:
+        lint_issues = []
+
+    # 3. Cache key = hash of scan summary + lint issue count
+    import hashlib as _hl
+    cache_key = _hl.md5(
+        json.dumps({
+            "summary": summary,
+            "coupling_top3": coupling[:3],
+            "cycle_count": len(cycles),
+            "lint_count": len(lint_issues),
+            "focus": focus_class,
+        }, sort_keys=True).encode()
+    ).hexdigest()
+
+    # Return cached advice if key matches
+    if cache_file.exists():
+        try:
+            cached_text = cache_file.read_text(encoding="utf-8")
+            first_line  = cached_text.splitlines()[0] if cached_text else ""
+            if first_line.startswith(f"<!-- gdep-advice-key:{cache_key} -->"):
+                text = "\n".join(cached_text.splitlines()[1:])
+                return RunResult(ok=True, stdout=text, stderr="")
+        except Exception:
+            pass
+
+    # 4. Impact analysis for focus class or top-coupling class
+    impact_text = ""
+    impact_target = focus_class or (coupling[0]["name"] if coupling else None)
+    if impact_target:
+        imp_res = impact(profile, impact_target, depth=3)
+        if imp_res.ok:
+            # Keep first 30 lines to avoid bloat
+            impact_lines = [l for l in imp_res.stdout.splitlines() if l.strip()][:30]
+            impact_text = "\n".join(impact_lines)
+
+    # 5. Build structured context (used both as LLM input and fallback output)
+    ctx_lines: list[str] = []
+    ctx_lines.append(f"Project: {profile.name}  Engine: {profile.display}")
+    ctx_lines.append(
+        f"Files: {summary.get('fileCount', '?')}  "
+        f"Classes: {summary.get('classCount', '?')}  "
+        f"Structs: {summary.get('structCount', 0)}  "
+        f"Enums: {summary.get('enumCount', 0)}"
+    )
+    ctx_lines.append(f"Dead code candidates: {summary.get('deadCount', 0)}")
+    ctx_lines.append(f"Circular dependencies: {len(cycles)}")
+    ctx_lines.append(f"Lint issues: {len(lint_issues)}")
+    ctx_lines.append("")
+
+    ctx_lines.append("Top coupling classes:")
+    for c in coupling[:10]:
+        ctx_lines.append(f"  {c['name']} (in-degree={c['score']})  {c.get('file','')}")
+
+    if dead_nodes:
+        ctx_lines.append("")
+        ctx_lines.append("Orphan classes (dead code candidates):")
+        for d in dead_nodes[:10]:
+            ctx_lines.append(f"  {d['name']}  {d.get('file','')}")
+
+    if cycles:
+        ctx_lines.append("")
+        ctx_lines.append("Circular dependencies (sample, up to 5):")
+        for cy in cycles[:5]:
+            if isinstance(cy, list):
+                ctx_lines.append("  " + " -> ".join(str(n) for n in cy))
+            else:
+                ctx_lines.append(f"  {cy}")
+
+    if lint_issues:
+        ctx_lines.append("")
+        ctx_lines.append("Lint issues (sample, up to 10):")
+        for issue in lint_issues[:10]:
+            rule = issue.get("rule_id", "?")
+            sev  = issue.get("severity", "?")
+            cls  = issue.get("class_name", "?")
+            msg  = issue.get("message", "")
+            ctx_lines.append(f"  [{sev}] {rule}  {cls}: {msg}")
+
+    if impact_text:
+        ctx_lines.append("")
+        ctx_lines.append(f"Impact analysis for '{impact_target}':")
+        ctx_lines.append(impact_text)
+
+    structured_ctx = "\n".join(ctx_lines)
+
+    # 6. Try LLM call
+    llm_advice = _call_llm_for_advice(structured_ctx, focus_class)
+
+    # 7. Format final output
+    advice_text = _format_advice(
+        profile=profile,
+        summary=summary,
+        coupling=coupling,
+        dead_nodes=dead_nodes,
+        cycles=cycles,
+        lint_issues=lint_issues,
+        impact_target=impact_target,
+        impact_text=impact_text,
+        llm_text=llm_advice,
+        focus_class=focus_class,
+    )
+
+    # 8. Cache
+    try:
+        cache_file.write_text(
+            f"<!-- gdep-advice-key:{cache_key} -->\n{advice_text}",
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+    return RunResult(ok=True, stdout=advice_text, stderr="")
+
+
+def _call_llm_for_advice(context: str, focus_class: str | None) -> str:
+    """Call configured LLM with structured context. Returns '' on any failure."""
+    try:
+        from .llm_provider import load_config, chat
+        cfg = load_config()
+        if not cfg:
+            return ""
+        focus_note = f" with focus on class '{focus_class}'" if focus_class else ""
+        prompt = (
+            f"You are an expert game software architect. "
+            f"Analyze the following project metrics{focus_note} "
+            f"and provide concise, actionable architecture advice.\n\n"
+            f"Structure your response as:\n"
+            f"1. IMMEDIATE (fix now): top 1-2 critical issues with concrete steps\n"
+            f"2. MID-TERM (next sprint): structural improvements\n"
+            f"3. LONG-TERM (backlog): strategic direction\n\n"
+            f"Keep each item to 2 sentences maximum. "
+            f"Cite the actual class names from the data.\n\n"
+            f"--- Project Data ---\n{context}"
+        )
+        messages = [
+            {"role": "system", "content": "You are a specialist in game software architecture."},
+            {"role": "user",   "content": prompt},
+        ]
+        resp = chat(cfg, messages)
+        return resp["message"]["content"].strip()
+    except Exception:
+        return ""
+
+
+def _format_advice(*, profile, summary, coupling, dead_nodes, cycles,
+                   lint_issues, impact_target, impact_text, llm_text,
+                   focus_class) -> str:
+    """Render the final advise report (ASCII-safe for cp949 terminals)."""
+    lines: list[str] = []
+    sep = "-" * 60
+
+    lines.append(sep)
+    focus_note = f"  (focus: {focus_class})" if focus_class else ""
+    lines.append(f"-- Architecture Advice: {profile.name}{focus_note} --")
+    lines.append(sep)
+    lines.append("")
+
+    # Summary block
+    lines.append("[Current State]")
+    lines.append(
+        f"  Classes : {summary.get('classCount', '?')}  "
+        f"Dead: {summary.get('deadCount', 0)}  "
+        f"Cycles: {len(cycles)}  "
+        f"Lint: {len(lint_issues)}"
+    )
+    if coupling:
+        top3 = ", ".join(f"{c['name']}({c['score']})" for c in coupling[:3])
+        lines.append(f"  High-coupling TOP 3: {top3}")
+    lines.append("")
+
+    # LLM advice block (if available)
+    if llm_text:
+        lines.append("[AI Architecture Advice]")
+        lines.append("")
+        for ln in llm_text.splitlines():
+            lines.append(f"  {ln}")
+        lines.append("")
+    else:
+        # Data-driven fallback advice
+        lines.append("[Data-driven Findings]")
+        lines.append("")
+
+        item = 1
+
+        # Cycles
+        if cycles:
+            lines.append(f"  {item}. Circular dependencies detected: {len(cycles)}")
+            for cy in cycles[:3]:
+                if isinstance(cy, list):
+                    lines.append("     " + " -> ".join(str(n) for n in cy))
+                else:
+                    lines.append(f"     {cy}")
+            lines.append("     -> Consider introducing interfaces or mediator pattern.")
+            lines.append("")
+            item += 1
+
+        # High coupling
+        if coupling and coupling[0]["score"] >= 4:
+            top = coupling[0]
+            lines.append(f"  {item}. High-coupling class: {top['name']} (in-degree={top['score']})")
+            lines.append("     -> Single Responsibility Principle violation suspected.")
+            lines.append("        Consider splitting into smaller focused classes.")
+            lines.append("")
+            item += 1
+
+        # Dead code
+        if dead_nodes:
+            lines.append(f"  {item}. Orphan classes (unreferenced): {len(dead_nodes)}")
+            names = ", ".join(d["name"] for d in dead_nodes[:5])
+            lines.append(f"     -> {names}")
+            lines.append("        Confirm intentional before removal.")
+            lines.append("")
+            item += 1
+
+        # Lint
+        errors = [i for i in lint_issues if i.get("severity") == "Error"]
+        warnings = [i for i in lint_issues if i.get("severity") == "Warning"]
+        if errors:
+            lines.append(f"  {item}. Lint errors: {len(errors)} (run 'gdep lint --fix' for fix suggestions)")
+            for e in errors[:3]:
+                lines.append(f"     [{e.get('rule_id','')}] {e.get('class_name','')}: {e.get('message','')}")
+            lines.append("")
+            item += 1
+        elif warnings:
+            lines.append(f"  {item}. Lint warnings: {len(warnings)}")
+            lines.append("")
+            item += 1
+
+        if item == 1:
+            lines.append("  No significant issues found. Architecture looks healthy.")
+            lines.append("")
+
+    # Impact block
+    if impact_text and impact_target:
+        lines.append(f"[Impact: {impact_target}]")
+        for ln in impact_text.splitlines()[:15]:
+            lines.append(f"  {ln}")
+        lines.append("")
+
+    # Tip
+    if not llm_text:
+        lines.append("[Tip] Configure an LLM for natural-language advice:")
+        lines.append("  gdep config llm")
+        lines.append("")
+
+    lines.append(sep)
+    return "\n".join(lines)
+
+
 def hints_generate(profile: ProjectProfile) -> RunResult:
     if _is_cpp(profile):
         return RunResult(ok=False, stdout="",
                          stderr="`hints` command only supports C# projects.")
-    return run(["hints", "generate", _src(profile)])
+    gdep_dir = Path(profile.root) / ".gdep"
+    gdep_dir.mkdir(parents=True, exist_ok=True)
+    out_path = str(gdep_dir / ".gdep-hints.json")
+    return run(["hints", "generate", _src(profile), "--output", out_path])
 
 
 def hints_show(profile: ProjectProfile) -> RunResult:
     if _is_cpp(profile):
         return RunResult(ok=False, stdout="",
                          stderr="`hints` command only supports C# projects.")
-    return run(["hints", "show", _src(profile)])
+    gdep_dir = str(Path(profile.root) / ".gdep")
+    return run(["hints", "show", gdep_dir])

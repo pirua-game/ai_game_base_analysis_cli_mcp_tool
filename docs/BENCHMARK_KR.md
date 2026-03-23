@@ -125,6 +125,23 @@
 
 ---
 
+## 케이스 G — Web UI 신규 기능 응답성 (단계 42)
+
+> 백엔드 FastAPI 엔드포인트 직접 호출 기준. 테스트 환경: macOS (M 시리즈), Unity TrumpCard.
+
+| 기능 | 엔드포인트 | Cold | Warm | 비고 |
+|------|-----------|------|------|------|
+| 🧪 테스트 범위 | `POST /project/test-scope` | ~22 s | **~1-2 s** | impact BFS + 파일 탐색 포함 |
+| 🏗️ 아키텍처 어드바이저 | `POST /project/advise` | ~1 s | **0.12 s** | scan+lint 캐시 활용 |
+| 📋 Lint Fix 스캔 | `POST /project/lint-fix` | ~22 s | **~1-2 s** | lint JSON 파싱 + fix_suggestion 필터 |
+| 📊 Diff 요약 | `POST /project/diff-summary` | ~5 s | **~5 s** | subprocess gdep diff 실행 (캐시 없음) |
+| 🪓 Axmol Events | `POST /engine/axmol/events` | **< 0.5 s** | **< 0.5 s** | C++ 파일 정규식 탐색 |
+
+> **warm 기준**: `.gdep/cache/` 디스크 캐시 보존 상태. LLM 미설정 시 `advise`는 캐시 0.12s.
+> **diff 요약**: subprocess 특성상 캐시 효과 없음. git 히스토리 크기에 따라 2-10s 범위.
+
+---
+
 ## 개선 후보 (잔여 병목)
 
 | 항목 | 현황 | 개선 방안 | 예상 효과 |

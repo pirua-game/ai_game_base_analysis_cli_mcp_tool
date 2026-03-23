@@ -46,6 +46,11 @@ _AS_BIN_PAT      = re.compile(rb'AttributeSet')
 _ABP_BIN_PAT     = re.compile(rb'AnimBlueprint|AnimInstance')
 _BT_BIN_PAT      = re.compile(rb'BehaviorTree|BTTask|BTDecorator|BTService')
 
+# Blueprint asset name patterns — GA_*/GE_*/AS_* 에셋명 직접 추출
+_BP_GA_NAME_PAT  = re.compile(rb'\bGA_[A-Za-z0-9_]{1,60}\b')
+_BP_GE_NAME_PAT  = re.compile(rb'\bGE_[A-Za-z0-9_]{1,60}\b')
+_BP_AS_NAME_PAT  = re.compile(rb'\bAS_[A-Za-z0-9_]{1,60}\b')
+
 
 # ── Data Models ───────────────────────────────────────────────
 
@@ -65,8 +70,12 @@ class GASClass:
 class GASAssetRef:
     """A .uasset that references GAS classes."""
     asset_path:   str
+    asset_name:   str         = ""                            # file stem e.g. "GA_BasicAttack"
     class_refs:   list[str]   = field(default_factory=list)   # C++ class names found
     tags:         list[str]   = field(default_factory=list)   # GameplayTag strings found
+    bp_ga_refs:   list[str]   = field(default_factory=list)   # Blueprint GA_ asset names referenced
+    bp_ge_refs:   list[str]   = field(default_factory=list)   # Blueprint GE_ asset names referenced
+    bp_as_refs:   list[str]   = field(default_factory=list)   # Blueprint AS_ asset names referenced
     has_ga:       bool        = False
     has_ge:       bool        = False
     has_as:       bool        = False
@@ -163,6 +172,7 @@ def _scan_uasset(asset_path: Path, module_name: str) -> GASAssetRef | None:
 
     ref = GASAssetRef(
         asset_path=str(asset_path),
+        asset_name=asset_path.stem,
         has_ga=has_ga, has_ge=has_ge, has_as=has_as, has_abp=has_abp
     )
 
@@ -173,6 +183,24 @@ def _scan_uasset(asset_path: Path, module_name: str) -> GASAssetRef | None:
             cls = m.group(2).decode("ascii", errors="ignore")
             if cls and not cls.endswith("_C"):
                 ref.class_refs.append(cls)
+
+    # Extract Blueprint asset names referenced (GA_*/GE_*/AS_* 에셋명 직접 추출)
+    self_name = asset_path.stem
+    for m in _BP_GA_NAME_PAT.finditer(data):
+        name = m.group(0).decode("ascii", errors="ignore")
+        if name != self_name:  # 자기 자신 제외
+            ref.bp_ga_refs.append(name)
+    for m in _BP_GE_NAME_PAT.finditer(data):
+        name = m.group(0).decode("ascii", errors="ignore")
+        if name != self_name:
+            ref.bp_ge_refs.append(name)
+    for m in _BP_AS_NAME_PAT.finditer(data):
+        name = m.group(0).decode("ascii", errors="ignore")
+        if name != self_name:
+            ref.bp_as_refs.append(name)
+    ref.bp_ga_refs = list(set(ref.bp_ga_refs))
+    ref.bp_ge_refs = list(set(ref.bp_ge_refs))
+    ref.bp_as_refs = list(set(ref.bp_as_refs))
 
     # Extract likely GameplayTag strings
     for m in _TAG_STRING_PAT.finditer(data):

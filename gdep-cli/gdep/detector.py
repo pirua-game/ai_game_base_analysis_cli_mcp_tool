@@ -70,6 +70,18 @@ def _find_project_root(start: Path) -> Path:
         # .NET solution root detection
         if any(f.endswith(".sln") for f in top_files):
             return current
+        # Axmol root detection (ax/ dir or CMakeLists.txt with 'axmol')
+        if "ax" in top_dirs:
+            return current
+        if "CMakeLists.txt" in top_files:
+            try:
+                cmake_text = (current / "CMakeLists.txt").read_text(
+                    encoding="utf-8", errors="replace"
+                )[:4096]
+                if "axmol" in cmake_text.lower():
+                    return current
+            except Exception:
+                pass
         parent = current.parent
         if parent == current:
             break
@@ -117,6 +129,27 @@ def detect(path: str | Path) -> ProjectProfile:
             version_hint=version_hint,
             source_dirs=src_dirs,
             extra={"has_packages": (root / "Packages").exists()},
+        )
+
+    # ── Axmol Early Detection (ax/ dir or CMakeLists.txt with 'axmol') ────
+    if _is_axmol(root, top_files, top_dirs):
+        classes_dir = root / "Classes"
+        if given != root and given.is_dir() and str(given).startswith(str(root)):
+            src_dirs = [given]
+        elif classes_dir.exists():
+            src_dirs = [classes_dir]
+        else:
+            src_dirs = [root]
+        version_hint = _read_axmol_version(root)
+        return ProjectProfile(
+            kind=ProjectKind.CPP,
+            root=root,
+            name=root.name,
+            language="C++",
+            engine=f"Axmol{' ' + version_hint if version_hint else ''}",
+            version_hint=version_hint,
+            source_dirs=src_dirs,
+            extra={"is_axmol": True},
         )
 
     # ── Cocos2d-x Early Detection (Classes/ + cocos2d/ combo) ──────
@@ -367,6 +400,35 @@ def _read_dotnet_target(csproj: Path) -> str | None:
         m = re.search(r'<TargetFramework>(.*?)</TargetFramework>', text)
         if m: return m.group(1)
     except:
+        pass
+    return None
+
+def _is_axmol(root: Path, top_files: set, top_dirs: set) -> bool:
+    """Detect Axmol engine project: ax/ directory or CMakeLists.txt containing 'axmol'."""
+    if "ax" in top_dirs:
+        return True
+    if "CMakeLists.txt" in top_files:
+        try:
+            text = (root / "CMakeLists.txt").read_text(encoding="utf-8", errors="replace")
+            if "axmol" in text.lower():
+                return True
+        except Exception:
+            pass
+    return False
+
+def _read_axmol_version(root: Path) -> str | None:
+    """Try to read Axmol engine version from CMakeLists.txt."""
+    cmake = root / "CMakeLists.txt"
+    import re as _re
+    try:
+        text = cmake.read_text(encoding="utf-8", errors="replace")
+        m = _re.search(r'set\s*\(\s*AX_VERSION\s+["\']?(\d+\.\d+[\.\d]*)', text, _re.IGNORECASE)
+        if m:
+            return m.group(1)
+        m = _re.search(r'axmol[_\-\s]*version[^\d]*(\d+\.\d+[\.\d]*)', text, _re.IGNORECASE)
+        if m:
+            return m.group(1)
+    except Exception:
         pass
     return None
 

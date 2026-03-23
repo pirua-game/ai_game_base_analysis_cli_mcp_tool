@@ -199,8 +199,24 @@ def flow(
     focus_classes: list[str] | None = None,
     fmt:           str = "json",
 ) -> RunResult:
-    # TODO: flow analysis logic for standard C++ (if needed)
-    return RunResult(ok=False, stdout="", stderr="Standard C++ flow analysis is not yet supported.")
+    """
+    Standard C++ method call flow analysis.
+    Traces function call chains from CLASS::METHOD up to DEPTH levels.
+    No Blueprint bridge (plain C++ only).
+    """
+    try:
+        from .cpp_flow import flow_to_json
+        data = flow_to_json(
+            src, class_name, method_name,
+            max_depth=depth,
+            focus_classes=focus_classes,
+        )
+        stdout = json.dumps(data, ensure_ascii=False, indent=2)
+        return RunResult(ok=True, stdout=stdout, data=data)
+    except Exception as e:
+        import traceback
+        return RunResult(ok=False, stdout="",
+                         stderr=f"{str(e)}\n{traceback.format_exc()}")
 
 
 # ── read_source ───────────────────────────────────────────────
@@ -281,13 +297,15 @@ def lint(src: str, fmt: str = "console") -> RunResult:
         proj = _get_project(src, deep=True)
 
         linter = Linter()
-        # For now, standard CPP uses circular dependency check primarily
-        # UE5 rules are skipped if not a UE5 project (project is CPPProject here)
         results = []
 
-        # General checks for standard CPP
+        # General checks (circular dependencies)
         linter._check_circular_dependencies(proj)
-        results = linter.results
+        results = list(linter.results)
+
+        # Axmol/C++ source-level checks (AXM-PERF-001, AXM-MEM-001, AXM-EVENT-001)
+        axmol_results = linter.lint_axmol(src)
+        results.extend(axmol_results)
 
         if fmt == "json":
             data = [vars(r) for r in results]

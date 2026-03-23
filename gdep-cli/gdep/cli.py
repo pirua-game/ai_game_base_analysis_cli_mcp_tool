@@ -29,7 +29,7 @@ def _get_profile(path: str):
     import time as _time
     from pathlib import Path as _Path
     _cache_dir = _Path(path).resolve().parent / ".gdep" / "cache"
-    _cache_dir.mkdir(exist_ok=True)
+    _cache_dir.mkdir(parents=True, exist_ok=True)
     _cache_file = _cache_dir / "detect.json"
     # Invalidate if any .cs / .h / .cpp / .uproject / .csproj changed
     _sig_files = (
@@ -385,6 +385,266 @@ def impact(path, target_class, depth, kind):
     _print_result(result)
 
 
+# ── test-scope ───────────────────────────────────────────────
+
+@cli.command("test-scope", context_settings=CONTEXT_SETTINGS, epilog="""
+\b
+Examples:
+  # Which test files to run when CombatManager changes?
+  gdep test-scope D:\\MyGame\\Assets\\Scripts CombatManager
+
+  # Wider blast radius (depth 5)
+  gdep test-scope . DataManager --depth 5
+
+  # CI pipeline: JSON output for automated test selection
+  gdep test-scope . BattleManager --format json
+
+  # Force project type
+  gdep test-scope . CardEffect --kind unity
+""")
+@click.argument("path",         default=".",  metavar="PATH")
+@click.argument("target_class", metavar="CLASS")
+@click.option("--depth", default=3, show_default=True, metavar="N",
+              help="Reverse dependency tracing depth")
+@click.option("--format", "fmt", default="console", show_default=True,
+              type=click.Choice(["console", "json"]),
+              help="Output format  (json is CI-friendly)")
+@click.option("--kind",  default=None,
+              type=click.Choice(["unity", "dotnet", "cpp", "unreal"]),
+              help="Force project type")
+def test_scope(path, target_class, depth, fmt, kind):
+    """Show which test files need to run when CLASS is modified.
+
+    \b
+    Runs reverse-dependency analysis (like 'impact') and then filters
+    the affected class list to only test files, based on naming patterns:
+
+    \b
+      Unity / .NET:  *Test*.cs  *Tests.cs  *Spec.cs  or Tests/ directory
+      UE5:           *Spec.cpp  *Test*.cpp            or Tests/ Specs/ directory
+      C++:           *test*.cpp *spec*.cpp test_*.cpp or tests/ directory
+
+    \b
+    Output:
+      List of test file paths with the affected class they cover.
+
+    \b
+    When to use:
+      - Before merging a PR: know exactly which tests must pass
+      - CI pipeline: use --format json to feed test runner with targeted files
+      - Code review: quickly assess test coverage for the changed class
+    """
+    profile = _get_profile(path)
+    if not _check_supported(profile, kind):
+        return
+    _safe_echo(
+        f"► test-scope  [{profile.display}]  {target_class}  depth={depth}",
+        fg="cyan",
+    )
+    result = runner.test_scope(profile, target_class, depth=depth, fmt=fmt)
+    _print_result(result)
+
+
+# ── watch ────────────────────────────────────────────────────
+
+@cli.command(context_settings=CONTEXT_SETTINGS, epilog="""
+\b
+Examples:
+  # Watch entire project (any file change triggers analysis)
+  gdep watch D:\\MyGame\\Assets\\Scripts
+
+  # Filter to a specific class only
+  gdep watch . --class CombatManager
+
+  # Wider blast radius
+  gdep watch . --depth 5
+
+  # Slow debounce for rapid saves (e.g. auto-save every 500 ms)
+  gdep watch . --debounce 2.0
+""")
+@click.argument("path", default=".", metavar="PATH")
+@click.option("--class", "target_class", default=None, metavar="CLASS",
+              help="Only trigger when this specific class file changes")
+@click.option("--depth", default=3, show_default=True, metavar="N",
+              help="Reverse dependency tracing depth")
+@click.option("--debounce", default=1.0, show_default=True, metavar="SEC",
+              help="Seconds to wait after the last change before running analysis")
+@click.option("--kind", default=None,
+              type=click.Choice(["unity", "dotnet", "cpp", "unreal"]),
+              help="Force project type")
+def watch(path, target_class, depth, debounce, kind):
+    """Watch source files and instantly show impact + test scope + lint on change.
+
+    \b
+    Monitors .cs / .cpp / .h files for modifications.
+    On each save, extracts the changed class name and runs:
+      1. impact     : blast radius (who depends on this class)
+      2. test-scope : which test files need to run
+      3. lint       : anti-pattern summary for the project
+
+    \b
+    Warm cache kicks in after the first run, making subsequent analyses
+    ~10-20x faster.  Press Ctrl+C to stop watching.
+
+    \b
+    When to use:
+      - During active development: get instant feedback on every save
+      - Pre-commit review: confirm no unexpected ripple effects
+    """
+    try:
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler
+    except ImportError:
+        _safe_echo(
+            "✗ watchdog is not installed.\n"
+            "  Run: pip install watchdog",
+            fg="red", err=True,
+        )
+        return
+
+    import threading
+    import time as _time
+    import datetime as _dt
+
+    profile = _get_profile(path)
+    if not _check_supported(profile, kind):
+        return
+
+    resolved = str(Path(path).resolve())
+
+    _safe_echo(f"\n[gdep watch] 감시 중: {resolved}", fg="cyan")
+    _safe_echo(
+        f"             엔진: {profile.display}"
+        f"  depth={depth}"
+        f"  debounce={debounce}s",
+        fg="cyan",
+    )
+    if target_class:
+        _safe_echo(f"             클래스 필터: {target_class}", fg="cyan")
+    _safe_echo("  Ctrl+C 로 종료\n", fg="cyan")
+
+    _pending: list = [None]   # [threading.Timer | None]
+
+    def _run_analysis(cls_name: str, changed_file: str) -> None:
+        t0 = _time.time()
+        now = _dt.datetime.now().strftime("%H:%M:%S")
+        sep = "─" * 45
+
+        _safe_echo(f"\n  변경 감지: {Path(changed_file).name}  ({now})", fg="yellow")
+        _safe_echo(f"  {sep}")
+
+        # ── 1. impact ──────────────────────────────────────────
+        impact_result = runner.impact(profile, cls_name, depth=depth)
+        if impact_result.ok:
+            affected_count = sum(
+                1 for ln in impact_result.stdout.splitlines()
+                if ln.strip().startswith(("├", "└", "│")) and ln.strip()
+            )
+            _safe_echo(f"  영향 클래스:  {affected_count}개  (depth={depth})")
+        else:
+            _safe_echo("  영향 클래스:  (분석 실패)", fg="red")
+
+        # ── 2. test-scope ──────────────────────────────────────
+        ts_result = runner.test_scope(profile, cls_name, depth=depth, fmt="json")
+        if ts_result.ok:
+            try:
+                import json as _json
+                ts_data = _json.loads(ts_result.stdout)
+                test_count = ts_data.get("test_file_count", 0)
+                _safe_echo(f"  테스트 파일:  {test_count}개")
+            except Exception:
+                _safe_echo("  테스트 파일:  (파싱 실패)", fg="yellow")
+        else:
+            _safe_echo("  테스트 파일:  (분석 실패)", fg="red")
+
+        # ── 3. lint ────────────────────────────────────────────
+        lint_result = runner.lint(profile, fmt="json")
+        if lint_result.ok:
+            issues = lint_result.data or []
+            cycles = [
+                i for i in issues
+                if isinstance(i, dict) and i.get("rule_id") == "GEN-ARCH-001"
+            ]
+            errors = [
+                i for i in issues
+                if isinstance(i, dict) and i.get("severity") == "Error"
+                and i.get("rule_id") != "GEN-ARCH-001"
+            ]
+            warnings = [
+                i for i in issues
+                if isinstance(i, dict) and i.get("severity") == "Warning"
+            ]
+
+            # Circular refs involving this class
+            relevant_cycles = [
+                c for c in cycles
+                if cls_name.lower() in c.get("message", "").lower()
+            ]
+            if relevant_cycles:
+                cycle_msg = relevant_cycles[0].get("message", "순환참조 감지됨")
+                _safe_echo(f"  순환참조:    ⚠ {cycle_msg}", fg="yellow")
+
+            if errors or warnings:
+                parts = []
+                if errors:
+                    # Show first error rule_id for context
+                    rule = errors[0].get("rule_id", "")
+                    parts.append(f"× {len(errors)} 오류" + (f"  [{rule}]" if rule else ""))
+                if warnings:
+                    parts.append(f"! {len(warnings)} 경고")
+                _safe_echo(f"  Lint:        {',  '.join(parts)}", fg="red" if errors else "yellow")
+            else:
+                _safe_echo("  Lint:        ✓ 이상 없음", fg="green")
+        else:
+            _safe_echo("  Lint:        (분석 실패)", fg="yellow")
+
+        elapsed = _time.time() - t0
+        _safe_echo(f"  {sep}")
+        _safe_echo(f"  처리 시간: {elapsed:.2f}s (warm cache)", fg="cyan")
+
+    def _schedule(cls_name: str, changed_file: str) -> None:
+        if _pending[0] is not None:
+            _pending[0].cancel()
+        t = threading.Timer(debounce, _run_analysis, args=[cls_name, changed_file])
+        _pending[0] = t
+        t.start()
+
+    _src_exts = {".cs", ".cpp", ".h", ".hpp"}
+
+    class _ChangeHandler(FileSystemEventHandler):
+        def _handle(self, event) -> None:
+            if event.is_directory:
+                return
+            p = Path(event.src_path)
+            if p.suffix.lower() not in _src_exts:
+                return
+            # Extract class name: "BattleCore@Calculator.cs" → "BattleCore"
+            cls_name = p.stem.split("@")[0].split(".")[0]
+            if not cls_name:
+                return
+            if target_class and cls_name.lower() != target_class.lower():
+                return
+            _schedule(cls_name, str(p))
+
+        on_modified = _handle
+        on_created  = _handle
+
+    observer = Observer()
+    observer.schedule(_ChangeHandler(), resolved, recursive=True)
+    observer.start()
+
+    try:
+        while observer.is_alive():
+            observer.join(timeout=1)
+    except KeyboardInterrupt:
+        _safe_echo("\n[gdep watch] 종료합니다.", fg="cyan")
+    finally:
+        observer.stop()
+        observer.join()
+        if _pending[0] is not None:
+            _pending[0].cancel()
+
+
 # ── lint ─────────────────────────────────────────────────────
 
 @cli.command(context_settings=CONTEXT_SETTINGS, epilog="""
@@ -395,6 +655,12 @@ Examples:
 
   # JSON output for CI integration / custom reporting
   gdep lint . --format json > lint_report.json
+
+  # Show fix suggestions for each issue (files are NOT modified)
+  gdep lint . --fix
+
+  # Fix suggestions in JSON for MCP / CI consumption
+  gdep lint . --fix --format json
 
   # Force engine type
   gdep lint . --kind unreal
@@ -418,10 +684,12 @@ Rule IDs:
 @click.option("--format", "fmt", default="console", show_default=True,
               type=click.Choice(["console", "json"]),
               help="Output format  (json is CI-friendly)")
+@click.option("--fix", is_flag=True, default=False,
+              help="Show code fix suggestions (dry-run: files are NOT modified)")
 @click.option("--kind",   default=None,
               type=click.Choice(["unity", "dotnet", "cpp", "unreal"]),
               help="Force project type")
-def lint(path, fmt, kind):
+def lint(path, fmt, kind, fix):
     """Scan for engine-specific anti-patterns and performance issues.
 
     \b
@@ -453,7 +721,120 @@ def lint(path, fmt, kind):
         return
     _safe_echo(f"► lint  [{profile.display}]  {profile.source_dirs[0]}", fg="cyan")
     result = runner.lint(profile, fmt=fmt)
-    _print_result(result)
+    if fix and fmt == "json" and result.ok and result.data:
+        # JSON mode: include fix_suggestion in JSON output
+        import json as _json
+        _print_result(result)
+    elif fix and result.ok and result.data:
+        _print_lint_fixes(result.data, profile)
+    else:
+        _print_result(result)
+
+
+def _print_lint_fixes(issues: list, profile) -> None:
+    """Print lint results with fix suggestions (--fix mode)."""
+    fixable   = [i for i in issues if i.get("fix_suggestion")]
+    unfixable = [i for i in issues if not i.get("fix_suggestion")]
+
+    total = len(issues)
+    fix_count = len(fixable)
+
+    _safe_echo(f"\n-- Lint --fix  ({total} issues,  {fix_count} with fix suggestions) --", fg="cyan")
+
+    for issue in fixable:
+        bullet = "x" if issue.get("severity") == "Error" else "!"
+        loc = f"{issue.get('class_name','?')}"
+        if issue.get("method_name"):
+            loc += f".{issue['method_name']}"
+        _safe_echo(f"\n{bullet} [{issue.get('rule_id','')}] {loc}", fg="red" if issue.get("severity") == "Error" else "yellow")
+        _safe_echo(f"  {issue.get('message','')}")
+        fp = issue.get("file_path", "")
+        if fp:
+            try:
+                from pathlib import Path as _P
+                _safe_echo(f"  File: {_P(fp).name}")
+            except Exception:
+                _safe_echo(f"  File: {fp}")
+        _safe_echo("\n  Fix suggestion:", fg="green")
+        for line in issue["fix_suggestion"].splitlines():
+            _safe_echo(f"    {line}", fg="green")
+
+    if unfixable:
+        _safe_echo(f"\n-- {len(unfixable)} issues without auto-fix suggestion --", fg="yellow")
+        for issue in unfixable:
+            bullet = "x" if issue.get("severity") == "Error" else "!"
+            loc = issue.get("class_name", "?")
+            _safe_echo(f"  {bullet} [{issue.get('rule_id','')}] {loc}: {issue.get('message','')}")
+
+    if not issues:
+        _safe_echo("No issues found.", fg="green")
+
+
+# ── advise ────────────────────────────────────────────────────
+
+@cli.command(context_settings=CONTEXT_SETTINGS, epilog="""
+\b
+Examples:
+  # Full project architecture diagnosis
+  gdep advise D:\\MyGame\\Source
+
+  # Focus on a specific high-coupling class
+  gdep advise D:\\MyGame\\Source --focus CombatManager
+
+  # JSON output for CI or MCP consumption
+  gdep advise D:\\MyGame\\Source --format json
+
+\b
+Cache:
+  Results are cached in .gdep/cache/advice.md.
+  Cache is invalidated when scan metrics change.
+  Use --refresh to bypass the cache.
+""")
+@click.argument("path", default=".", metavar="PATH")
+@click.option("--focus",   "focus_class", default=None, metavar="CLASS",
+              help="Class to center the advice around (impact analysis pivot)")
+@click.option("--format", "fmt", default="console", show_default=True,
+              type=click.Choice(["console", "json"]),
+              help="Output format")
+@click.option("--refresh", is_flag=True, default=False,
+              help="Bypass advice cache and regenerate")
+@click.option("--kind", default=None,
+              type=click.Choice(["unity", "dotnet", "cpp", "unreal"]),
+              help="Force project type")
+def advise(path, focus_class, fmt, refresh, kind):
+    """Combine scan + lint + impact into an architecture advice report.
+
+    \b
+    Without LLM config: outputs a data-driven structured report.
+    With LLM config   : sends the data to the LLM for natural-language advice.
+
+    \b
+    Configure LLM:
+      gdep config llm
+    """
+    profile = _get_profile(path)
+    if not _check_supported(profile, kind):
+        return
+
+    if refresh:
+        # Delete cached advice so advise() regenerates it
+        import shutil as _sh
+        cache_file = Path(profile.root) / ".gdep" / "cache" / "advice.md"
+        try:
+            cache_file.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    _safe_echo(f"► advise  [{profile.display}]  {profile.source_dirs[0]}", fg="cyan")
+
+    result = runner.advise(profile, focus_class=focus_class, fmt=fmt)
+
+    if fmt == "json" and result.ok:
+        # Return advice text wrapped in JSON envelope
+        import json as _json
+        click.echo(_json.dumps({"ok": True, "advice": result.stdout}, ensure_ascii=False, indent=2))
+    else:
+        _print_result(result)
 
 
 # ── graph ─────────────────────────────────────────────────────

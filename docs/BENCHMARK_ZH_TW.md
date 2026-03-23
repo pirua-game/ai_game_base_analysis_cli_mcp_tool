@@ -120,6 +120,20 @@
 
 ---
 
+## 情境 G — Web UI 新功能回應時間 (第 42 步)
+
+> 直接呼叫 FastAPI 端點基準。測試環境：macOS（M 系列），Unity TrumpCard 專案。
+
+| 功能 | 端點 | Cold | Warm | 備註 |
+|------|------|------|------|------|
+| 🧪 測試範圍 | `POST /project/test-scope` | ~22 s | **~1-2 s** | 含 impact BFS + 檔案掃描 |
+| 🏗️ 架構顧問 | `POST /project/advise` | ~1 s | **0.12 s** | 利用 scan+lint 快取 |
+| 📋 Lint Fix 掃描 | `POST /project/lint-fix` | ~22 s | **~1-2 s** | lint JSON + fix_suggestion 過濾 |
+| 📊 Diff 摘要 | `POST /project/diff-summary` | ~5 s | **~5 s** | subprocess gdep diff（無快取） |
+| 🪓 Axmol 事件 | `POST /engine/axmol/events` | **< 0.5 s** | **< 0.5 s** | C++ 正規表示式掃描 |
+
+---
+
 ## 剩餘瓶頸
 
 | 項目 | 現狀 | 改進方案 | 預期效果 |

@@ -7,8 +7,9 @@
 > - **UE5**: ProjectZ / Lyra (large-scale sample, custom Zombie included)
 > - **UE5 GAS**: HackAndSlash portfolio (32 files / 31 classes)
 >
-> **MCP tools available (as of step 27): 13 total**  
-> 4 common + 1 raw CLI + 2 Unity-specific + 5 UE5-specific
+> **MCP tools available (as of step 42): 18 total**
+> 9 common (including test-scope, lint-fix, diff-summary, architecture-advice) + 2 Unity-specific
+> + 5 UE5-specific + 1 Axmol-specific + 1 raw CLI
 
 ---
 
@@ -213,6 +214,90 @@ def _safe_echo(msg: str, **kwargs):
 **Scope:** Affects all direct CLI usage (MCP-routed calls are unaffected — MCP server handles encoding separately)
 
 **Status:** ✅ Fixed (`gdep-cli/gdep/cli.py`)
+
+---
+
+## Appendix C: New Tools (steps 36-42) — Usage Scenarios
+
+### suggest_test_scope — Determine tests to run before modifying a class
+
+```
+Q: "Which test files should I run before modifying BattleCore?"
+→ suggest_test_scope(project_path, "BattleCore")
+
+Sample output (Unity TrumpCard):
+  🧪 Test Scope for BattleCore (depth=3)
+  Affected classes: 389
+  Matched tests: 3
+    ✓ Tests/BattleCoreTest.cs  [BattleCore]
+    ✓ Tests/CombatSystemSpec.cs  [CombatSystem]
+    ✓ Tests/Integration/GameFlowTest.cs  [test dir]
+```
+
+**Use case**: CI pipeline integration (JSON format) — selective test execution based on changed classes.
+
+---
+
+### get_architecture_advice — Full architecture diagnosis
+
+```
+Q: "What are the main architecture problems in this project?"
+→ get_architecture_advice(project_path)
+
+Sample output (Axmol FantasyClicker):
+  [Current State]
+    Classes: 11  Dead: 2  Cycles: 0  Lint: 0
+    High-coupling TOP 3: DFBattleManager(4), DFObject(4), DFMonster(2)
+
+  [Data-driven Findings]
+    1. High-coupling: DFBattleManager (in-degree=4) → SRP violation suspected
+    2. Orphan classes: 2 → DFEffect, DFTrench
+
+  Cache warm: 0.12s
+```
+
+**Use case**: Pre-PR architecture review automation. With LLM configured, generates IMMEDIATE/MID-TERM/LONG-TERM advice.
+
+---
+
+### suggest_lint_fixes — Code fix suggestions
+
+```
+Q: "How do I fix these lint issues?"
+→ suggest_lint_fixes(project_path, rule_ids=["UNI-PERF-001"])
+
+Sample output:
+  ### UNI-PERF-001 (2 found)
+  **EnemyController.Update** — Assets/Scripts/EnemyController.cs
+  > GetComponent called inside Update loop
+
+  ```
+  // Before (anti-pattern):
+  void Update() { var rb = GetComponent<Rigidbody>(); ... }
+
+  // After (fix):
+  Rigidbody _rb;
+  void Awake() { _rb = GetComponent<Rigidbody>(); }
+  void Update() { ... _rb ... }
+  ```
+```
+
+---
+
+### summarize_project_diff — PR architecture impact summary
+
+```
+Q: "What architectural impact does this PR have?"
+→ summarize_project_diff(project_path, commit_ref="HEAD~1")
+
+Sample output (Unity TrumpCard):
+  ## PR Architecture Impact Summary
+  Changed files: 1
+  New circular refs: +13  Resolved: -12  Net: +1 (⚠️)
+
+  ### High-coupling classes in new circular refs
+  - PlayingCard (coupling 46) — included in new cycle
+```
 
 ---
 

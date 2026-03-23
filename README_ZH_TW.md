@@ -1,12 +1,12 @@
 # 🎮 gdep — 遊戲程式碼庫分析工具
 
-**在 0.5 秒內理解 Unity/UE5 大型專案，讓 Claude/Cursor 真正讀懂程式碼**
+**在 0.5 秒內理解 Unity/UE5/Axmol 大型專案，讓 Claude/Cursor 真正讀懂程式碼**
 
 [![CI](https://github.com/pirua-game/gdep/actions/workflows/ci.yml/badge.svg)](https://github.com/pirua-game/gdep/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/gdep)](https://pypi.org/project/gdep/)
 [![npm](https://img.shields.io/npm/v/gdep-mcp)](https://www.npmjs.com/package/gdep-mcp)
 
-> *"修改這個類別會影響哪裡？"* — 3 秒精確回答，零幻覺  
+> *"修改這個類別會影響哪裡？"* — 3 秒精確回答，零幻覺
 > 實測：**MCP 準確率 100% (5/5)** — 基於程式碼的事實 vs 普通 Claude 猜測 + 幻覺
 
 **其他語言版本：**
@@ -32,8 +32,6 @@
 | Unity 熱快取掃描 | **0.49 秒** | SSD 環境，900+ 個類別 |
 | 峰值記憶體 | **28.5 MB** | 目標 10 倍餘量 |
 | MCP 準確率 | **5/5 (100%)** | 基於程式碼的事實 |
-
-
 
 > 詳情 → [docs/BENCHMARK_ZH_TW.md](./docs/BENCHMARK_ZH_TW.md) · [docs/mcp-benchmark_ZH_TW.md](./docs/mcp-benchmark_ZH_TW.md)
 
@@ -62,7 +60,7 @@ npm install -g gdep-mcp
 }
 ```
 
-設定完成。Claude · Cursor · Gemini 每次對話都可使用 13 個遊戲引擎專屬工具。
+設定完成。Claude · Cursor · Gemini 每次對話都可使用 **18 個**遊戲引擎專屬工具。
 
 ### MCP 改變什麼
 
@@ -71,7 +69,7 @@ npm install -g gdep-mcp
 gdep MCP:   直接相依 2 個 · 間接 200+ UI 類別 · 資源: prefabs/UI/combat.prefab
 ```
 
-### 13 個 MCP 工具一覽
+### 18 個 MCP 工具一覽
 
 | 工具 | 使用時機 |
 |------|---------|
@@ -80,9 +78,14 @@ gdep MCP:   直接相依 2 個 · 間接 200+ UI 類別 · 資源: prefabs/UI/co
 | `trace_gameplay_flow` | C++ → Blueprint 呼叫鏈追蹤 |
 | `inspect_architectural_health` | 技術債務全面診斷 |
 | `explore_class_semantics` | 陌生類別深度分析 |
+| `suggest_test_scope` | 修改類別後需執行的測試檔案自動推算 |
+| `suggest_lint_fixes` | lint 問題 + 程式碼修復建議（dry-run） |
+| `summarize_project_diff` | 從架構角度彙總 git diff |
+| `get_architecture_advice` | 專案綜合診斷 + LLM 架構建議 |
 | `execute_gdep_cli` | CLI 全功能直接存取 |
 | `find_unity_event_bindings` | Inspector 綁定方法（程式碼搜尋不到的區域） |
 | `analyze_unity_animator` | Animator 狀態機結構 |
+| `analyze_axmol_events` | Axmol EventDispatcher/Scheduler 綁定映射 |
 | `analyze_ue5_gas` | GAS Ability / Effect / Tag / ASC 全量 |
 | `analyze_ue5_behavior_tree` | BehaviorTree 資源結構 |
 | `analyze_ue5_state_tree` | StateTree 資源結構 |
@@ -116,6 +119,7 @@ chmod +x install.sh && ./install.sh
 gdep detect {path}                     # 自動偵測引擎
 gdep scan {path} --circular --top 15   # 結構分析
 gdep init {path}                       # 建立 .gdep/AGENTS.md
+gdep advise {path}                     # 架構診斷 + 建議
 ```
 
 ---
@@ -129,7 +133,10 @@ gdep init {path}                       # 建立 .gdep/AGENTS.md
 | `describe` | 類別詳情 + Blueprint 實作 + AI 摘要 | 陌生類別、程式碼審查 |
 | `flow` | 呼叫鏈追蹤（C++→BP 邊界） | Bug 追蹤、流程分析 |
 | `impact` | 變更影響範圍反向追蹤 | 重構前安全確認 |
-| `lint` | 13 條遊戲專用反模式 | PR 前品質檢查 |
+| `test-scope` | 修改類別後應執行的測試檔案 | 合併前、CI 規劃 |
+| `watch` | 即時檔案變更監視 (impact+test+lint) | 開發中持續監控 |
+| `lint` | 16 條遊戲專用反模式（+ `--fix`） | PR 前品質檢查 |
+| `advise` | 整體架構診斷 + LLM 建議 | 架構審查、技術債務 |
 | `graph` | 相依關係圖匯出 | 文件化、視覺化 |
 | `diff` | 提交前後相依比對 | PR 審查、CI 閘門 |
 | `init` | 建立 AI Agent 內容 | **AI 編碼助手初始設定** |
@@ -145,12 +152,12 @@ gdep init {path}                       # 建立 .gdep/AGENTS.md
 |------|---------|---------|---------|---------|
 | Unity (C#) | ✅ | ✅ | ✅ Prefab/Scene | UnityEvent、Animator |
 | Unreal Engine 5 | ✅ UCLASS/USTRUCT/UENUM | ✅ C++→BP | ✅ Blueprint/Map | GAS、BP 對應、BT/ST、ABP/Montage |
-| Cocos2d-x (C++) | ✅ | ✅ | — | |
+| Axmol / Cocos2d-x (C++) | ✅ Tree-sitter | ✅ | — | EventDispatcher/Scheduler 綁定 |
 | .NET (C#) | ✅ | ✅ | — | |
 | 通用 C++ | ✅ | ✅ | — | |
 
 ---
 
-*MCP 伺服器 → [gdep-cli/gdep-mcp/README_ZH_TW.md](./gdep-cli/gdep-mcp/README_ZH_TW.md)*  
-*CI/CD 整合 → [docs/ci-integration_ZH_TW.md](./docs/ci-integration_ZH_TW.md)*  
+*MCP 伺服器 → [gdep-cli/gdep-mcp/README_ZH_TW.md](./gdep-cli/gdep-mcp/README_ZH_TW.md)*
+*CI/CD 整合 → [docs/ci-integration_ZH_TW.md](./docs/ci-integration_ZH_TW.md)*
 *效能基準 → [docs/BENCHMARK_ZH_TW.md](./docs/BENCHMARK_ZH_TW.md)*
