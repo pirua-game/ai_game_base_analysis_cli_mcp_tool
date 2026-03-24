@@ -80,7 +80,7 @@ def find_gdep(extra_hint: str | None = None) -> _GdepCmd | None:
     ]
     dotnet = _find_dotnet()
     for dll_path in dll_candidates:
-        if dll_path.exists() and dotnet:
+        if dll_path.is_file() and dotnet:
             return _GdepCmd(args=[dotnet, str(dll_path)], is_dll=True)
 
     # --- 5 & 6. Legacy native binaries ---
@@ -94,7 +94,7 @@ def find_gdep(extra_hint: str | None = None) -> _GdepCmd | None:
         *([] if not extra_hint else [Path(extra_hint)]),
     ]
     for p in native_candidates:
-        if p.exists():
+        if p.is_file():
             return _GdepCmd(args=[str(p)])
 
     # --- 7. PATH fallback ---
@@ -157,6 +157,8 @@ def run(args: list[str], timeout: int = 180,
         return RunResult(ok=False, stdout="", stderr=f"Execution timed out ({timeout}s)")
     except FileNotFoundError as e:
         return RunResult(ok=False, stdout="", stderr=f"File not found: {e}")
+    except PermissionError as e:
+        return RunResult(ok=False, stdout="", stderr=f"Permission denied executing gdep parser: {e}")
 
 
 def _format_cs_scan_console(data: dict, top: int, circular: bool, dead_code: bool) -> str:

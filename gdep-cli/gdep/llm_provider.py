@@ -10,7 +10,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-import requests
+try:
+    import requests
+except ImportError:
+    requests = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -46,6 +49,8 @@ def save_config(config: LLMConfig):
 
 def list_ollama_models(base_url: str = "http://localhost:11434") -> list[str]:
     """Returns a list of models installed in Ollama."""
+    if requests is None:
+        return []
     try:
         resp = requests.get(f"{base_url}/api/tags", timeout=5)
         if resp.ok:
@@ -85,6 +90,8 @@ def _chat_ollama(config: LLMConfig, messages: list[dict],
     if tools:
         payload["tools"] = tools
 
+    if requests is None:
+        raise ImportError("'requests' package is required for Ollama. Install it with: pip install requests")
     resp = requests.post(f"{config.base_url}/api/chat",
                          json=payload, timeout=180)
     resp.raise_for_status()
