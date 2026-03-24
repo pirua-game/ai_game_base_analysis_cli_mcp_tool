@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-950 text-gray-100 font-sans;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-gray-900; }
+  ::-webkit-scrollbar-thumb { @apply bg-gray-600 rounded; }
+}
+
+@layer components {
+  .btn {
+    @apply px-3 py-1.5 rounded text-sm font-medium transition-colors cursor-pointer;
+  }
+  .btn-primary {
+    @apply btn bg-emerald-600 hover:bg-emerald-500 text-white;
+  }
+  .btn-secondary {
+    @apply btn bg-gray-700 hover:bg-gray-600 text-gray-200;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent hover:bg-gray-800 text-gray-400 hover:text-gray-200;
+  }
+  .card {
+    @apply bg-gray-900 border border-gray-800 rounded-lg;
+  }
+  .input {
+    @apply bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm
+           text-gray-200 placeholder-gray-500 focus:outline-none
+           focus:border-emerald-500 w-full;
+  }
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+  }
+  .tab-active {
+    @apply border-b-2 border-emerald-500 text-emerald-400;
+  }
+  .tab-inactive {
+    @apply border-b-2 border-transparent text-gray-400 hover:text-gray-200;
+  }
+}
+
+/* ── Light theme overrides ───────────────────────────────────────────────────
+   Applied when <html class="light"> is set.
+   Remaps dark gray scale → slate light scale with !important to beat Tailwind.
+   ─────────────────────────────────────────────────────────────────────────── */
+html.light body { background-color: #f8fafc !important; color: #0f172a !important; }
+
+/* scrollbar */
+html.light ::-webkit-scrollbar-track { background: #f1f5f9 !important; }
+html.light ::-webkit-scrollbar-thumb { background: #94a3b8 !important; }
+
+/* backgrounds */
+html.light .bg-gray-950 { background-color: #f8fafc !important; }
+html.light .bg-gray-900 { background-color: #f1f5f9 !important; }
+html.light .bg-gray-800 { background-color: #e2e8f0 !important; }
+html.light .bg-gray-800\/50 { background-color: rgba(226,232,240,0.5) !important; }
+html.light .bg-gray-700 { background-color: #cbd5e1 !important; }
+html.light .bg-gray-600 { background-color: #94a3b8 !important; }
+
+/* hover backgrounds */
+html.light .hover\:bg-gray-800:hover { background-color: #e2e8f0 !important; }
+html.light .hover\:bg-gray-800\/60:hover { background-color: rgba(226,232,240,0.6) !important; }
+html.light .hover\:bg-gray-700:hover { background-color: #cbd5e1 !important; }
+html.light .hover\:bg-gray-600:hover { background-color: #94a3b8 !important; }
+html.light .hover\:bg-white\/5:hover { background-color: rgba(0,0,0,0.04) !important; }
+
+/* text */
+html.light .text-gray-100 { color: #0f172a !important; }
+html.light .text-gray-200 { color: #1e293b !important; }
+html.light .text-gray-300 { color: #334155 !important; }
+html.light .text-gray-400 { color: #475569 !important; }
+html.light .text-gray-500 { color: #64748b !important; }
+html.light .text-gray-600 { color: #94a3b8 !important; }
+html.light .hover\:text-gray-200:hover { color: #1e293b !important; }
+html.light .hover\:text-gray-300:hover { color: #334155 !important; }
+html.light .hover\:text-gray-400:hover { color: #475569 !important; }
+
+/* borders */
+html.light .border-gray-800 { border-color: #e2e8f0 !important; }
+html.light .border-gray-700 { border-color: #cbd5e1 !important; }
+html.light .border-gray-600 { border-color: #94a3b8 !important; }
+html.light .divide-gray-800 > * + * { border-color: #e2e8f0 !important; }
+
+/* component classes */
+html.light .btn-secondary { background-color: #e2e8f0 !important; color: #1e293b !important; }
+html.light .btn-secondary:hover { background-color: #cbd5e1 !important; }
+html.light .btn-ghost { color: #475569 !important; }
+html.light .btn-ghost:hover { background-color: #e2e8f0 !important; color: #1e293b !important; }
+html.light .card { background-color: #ffffff !important; border-color: #e2e8f0 !important; }
+html.light .input {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html.light .input::placeholder { color: #94a3b8 !important; }
+
+/* tooltip in light mode */
+html.light .fixed.bg-gray-700 { background-color: #334155 !important; }
+
+/* amber action bar stays dark for contrast */
+html.light .bg-amber-950 { background-color: #451a03 !important; }
+html.light .border-amber-800 { border-color: #92400e !important; }
+

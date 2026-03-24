@@ -74,14 +74,14 @@ echo "  [OK] Python 패키지 완료"
 # ── 5. Node.js 프론트엔드 의존성 ─────────────────────────────
 echo "[5/5] 프론트엔드 의존성 설치..."
 if [ "$NODE_OK" -eq 1 ]; then
-    if [ ! -f "$CLI/frontend/node_modules/.bin/vite" ]; then
+    if [ ! -f "$CLI/web/frontend/node_modules/.bin/vite" ]; then
         echo "  npm install 실행 중 (최초 1회)..."
         NPM_CACHE=$(npm config get cache 2>/dev/null || echo "$HOME/.npm")
         if [ -d "$NPM_CACHE" ] && [ ! -w "$NPM_CACHE" ]; then
             echo "  npm 캐시 권한 수정 중... (sudo 필요)"
             sudo chown -R "$(whoami)" "$NPM_CACHE"
         fi
-        cd "$CLI/frontend" && npm install --include=dev 2>&1 && cd "$SCRIPT_DIR"
+        cd "$CLI/web/frontend" && npm install --include=dev 2>&1 && cd "$SCRIPT_DIR"
         if [ $? -ne 0 ]; then
             echo "  [WARN] npm install 실패 - Web UI 를 사용하지 않으면 무시 가능"
         fi

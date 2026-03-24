@@ -2,6 +2,7 @@
 
 **Unity・UE5・Axmol 大規模プロジェクトを 0.5 秒で把握し、Claude/Cursor に実際のコードを読ませる**
 
+[![CI](https://github.com/pirua-game/gdep/actions/workflows/ci.yml/badge.svg)](https://github.com/pirua-game/gdep/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/gdep)](https://pypi.org/project/gdep/)
 [![npm](https://img.shields.io/npm/v/gdep-mcp)](https://www.npmjs.com/package/gdep-mcp)
 
@@ -119,6 +120,39 @@ gdep scan {path} --circular --top 15   # 構造分析
 gdep init {path}                       # .gdep/AGENTS.md 生成
 gdep advise {path}                     # アーキテクチャ診断 + アドバイス
 ```
+
+---
+
+## 🖥️ Web UI — ブラウザで視覚的に分析する
+
+インストール後はターミナル不要。ブラウザで依存グラフ・呼び出しフロー・AI チャットを利用できます。
+
+**ステップ 1 — インストール**（プロジェクトルートで初回のみ）
+
+```
+install.bat          # Windows
+./install.sh         # macOS / Linux
+```
+
+**ステップ 2 — 起動**
+
+```
+run.bat              # Windows — バックエンド + フロントエンドを別々の 2 ターミナルで自動起動
+./run.sh             # macOS/Linux — ターミナル 1: バックエンド  (http://localhost:8000)
+./run_front.sh       # macOS/Linux — ターミナル 2: フロントエンド (http://localhost:5173)
+```
+
+`http://localhost:5173` にアクセス → サイドバーでプロジェクトのソースフォルダを指定
+
+主な機能:
+- インタラクティブな依存グラフ・呼び出しフローの可視化
+- クラスブラウザ（影響分析・lint 付き）
+- 実際のコードを読む AI チャットエージェント（ツールコーリング）
+- エンジン専用エクスプローラー: GAS · Blueprint マッピング · Animator · BehaviorTree · StateTree
+
+> UI 対応言語: **英語と韓国語のみ** · ローカル LLM: **Ollama** 対応 · 非商用ツールのため一部機能が完全でない場合があります
+
+詳細ドキュメント → [gdep-cli/web/README.md](./gdep-cli/web/README.md)
 
 ---
 

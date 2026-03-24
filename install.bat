@@ -1,12 +1,13 @@
 @echo off
+setlocal enabledelayedexpansion
 chcp 65001 > nul
 title GDEP Installer
 
 echo.
-echo  ╔══════════════════════════════════════╗
-echo  ║         gdep  Installer              ║
-echo  ║  Game Codebase Analysis Tool         ║
-echo  ╚══════════════════════════════════════╝
+echo  ===================================
+echo         gdep  Installer
+echo    Game Codebase Analysis Tool
+echo  ===================================
 echo.
 
 set ROOT=%~dp0
@@ -15,13 +16,13 @@ set VENV=%CLI%\.venv
 
 :: ── 1. Python 확인 ──────────────────────────────────────────
 echo [1/5] Python 확인...
-python --version > nul 2>&1
+py -3.11 --version > nul 2>&1
 if errorlevel 1 (
-    echo  [ERROR] Python 3.11+ 이 설치되어 있지 않습니다.
+    echo  [ERROR] Python 3.11 이 설치되어 있지 않습니다.
     echo          https://python.org 에서 설치 후 다시 실행하세요.
     goto :fail
 )
-for /f "tokens=2" %%v in ('python --version 2^>^&1') do set PYVER=%%v
+for /f "tokens=2" %%v in ('py -3.11 --version 2^>^&1') do set PYVER=%%v
 echo  [OK] Python %PYVER%
 
 :: ── 2. .NET Runtime 확인 ────────────────────────────────────
@@ -53,7 +54,7 @@ echo [4/5] Python 패키지 설치...
 
 if not exist "%VENV%" (
     echo  가상환경 생성 중...
-    python -m venv "%VENV%"
+    py -3.11 -m venv "%VENV%"
     if errorlevel 1 ( echo  [ERROR] venv 생성 실패 & goto :fail )
 )
 
@@ -71,25 +72,39 @@ echo  [OK] Python 패키지 완료
 
 :: ── 5. Node.js 프론트엔드 의존성 ─────────────────────────────
 echo [5/5] 프론트엔드 의존성 설치...
-if "%NODE_OK%"=="1" (
-    if not exist "%CLI%\frontend\node_modules\.bin\vite.cmd" (
-        echo  npm install 실행 중 (최초 1회)...
-        pushd "%CLI%\frontend"
-        call npm install --silent
-        popd
-        if errorlevel 1 ( echo  [WARN] npm install 실패 - Web UI 를 사용하지 않으면 무시 가능 )
-    ) else (
-        echo  [OK] node_modules 이미 존재 - 스킵
-    )
-) else (
-    echo  [SKIP] Node.js 없음 - Web UI 설치 생략
-)
+if not "%NODE_OK%"=="1" goto :skip_npm
+
+pushd "%CLI%\web\frontend"
+if exist "node_modules\vite" goto :npm_exists
+
+echo  npm install 실행 중 (최초 1회)...
+call npm install
+if not errorlevel 1 goto :npm_done
+
+echo  [WARN] npm install 실패 - node.exe 종료 후 재시도...
+taskkill /f /im node.exe > nul 2>&1
+timeout /t 2 /nobreak > nul
+call npm install
+if errorlevel 1 echo  [WARN] npm install 최종 실패 - Web UI 를 사용하지 않으면 무시 가능
+goto :npm_done
+
+:npm_exists
+echo  [OK] node_modules 이미 존재 - 스킵
+
+:npm_done
+popd
+goto :install_done
+
+:skip_npm
+echo  [SKIP] Node.js 없음 - Web UI 설치 생략
+
+:install_done
 
 :: ── 완료 ────────────────────────────────────────────────────
 echo.
-echo  ╔══════════════════════════════════════╗
-echo  ║          설치 완료!                  ║
-echo  ╚══════════════════════════════════════╝
+echo  ===================================
+echo           설치 완료!
+echo  ===================================
 echo.
 echo  다음 명령어로 시작하세요:
 echo.

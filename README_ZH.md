@@ -2,6 +2,7 @@
 
 **在 0.5 秒内理解 Unity/UE5/Axmol 大型项目，让 Claude/Cursor 真正读懂代码**
 
+[![CI](https://github.com/pirua-game/gdep/actions/workflows/ci.yml/badge.svg)](https://github.com/pirua-game/gdep/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/gdep)](https://pypi.org/project/gdep/)
 [![npm](https://img.shields.io/npm/v/gdep-mcp)](https://www.npmjs.com/package/gdep-mcp)
 
@@ -120,6 +121,39 @@ gdep scan {path} --circular --top 15   # 结构分析
 gdep init {path}                       # 生成 .gdep/AGENTS.md
 gdep advise {path}                     # 架构诊断 + 建议
 ```
+
+---
+
+## 🖥️ Web UI — 在浏览器中可视化分析
+
+安装完成后无需终端，直接在浏览器中查看依赖图、调用流程并使用 AI 聊天。
+
+**第一步 — 安装**（在项目根目录执行一次）
+
+```
+install.bat          # Windows
+./install.sh         # macOS / Linux
+```
+
+**第二步 — 启动**
+
+```
+run.bat              # Windows — 自动在两个独立终端中启动后端 + 前端
+./run.sh             # macOS/Linux — 终端 1：后端  (http://localhost:8000)
+./run_front.sh       # macOS/Linux — 终端 2：前端 (http://localhost:5173)
+```
+
+打开 `http://localhost:5173` → 在侧边栏中指定项目源代码目录
+
+主要功能：
+- 交互式依赖图与调用流程可视化
+- 类浏览器（含影响分析与 lint）
+- 读取实际代码的 AI 聊天智能体（工具调用）
+- 引擎专属探索器：GAS · Blueprint 映射 · Animator · BehaviorTree · StateTree
+
+> UI 语言：**仅支持英语和韩语** · 本地 LLM：支持 **Ollama** · 非商业工具，部分功能可能尚不完善
+
+详细文档 → [gdep-cli/web/README.md](./gdep-cli/web/README.md)
 
 ---
 

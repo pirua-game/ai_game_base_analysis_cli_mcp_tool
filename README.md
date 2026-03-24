@@ -2,6 +2,7 @@
 
 **Understand a Unity/UE5/Axmol project in 0.5 seconds. Make Claude and Cursor read the actual code.**
 
+[![CI](https://github.com/pirua-game/gdep/actions/workflows/ci.yml/badge.svg)](https://github.com/pirua-game/gdep/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/gdep)](https://pypi.org/project/gdep/)
 [![npm](https://img.shields.io/npm/v/gdep-mcp)](https://www.npmjs.com/package/gdep-mcp)
 
@@ -133,6 +134,39 @@ gdep advise {path}                          # architecture diagnosis + advice
 
 After `gdep init`, Claude / Cursor / Gemini automatically read the project context and
 know which gdep tools to call for which questions.
+
+---
+
+## 🖥️ Web UI — Visual Analysis in Your Browser
+
+gdep ships a browser UI for interactive, visual analysis — no terminal required after setup.
+
+**Step 1 — Install** (run once from project root)
+
+```
+install.bat          # Windows
+./install.sh         # macOS / Linux
+```
+
+**Step 2 — Launch**
+
+```
+run.bat              # Windows — opens backend + frontend in two separate terminals automatically
+./run.sh             # macOS/Linux — Terminal 1: backend  (http://localhost:8000)
+./run_front.sh       # macOS/Linux — Terminal 2: frontend (http://localhost:5173)
+```
+
+Open `http://localhost:5173` → point the sidebar to your project's source folder.
+
+What you get:
+- Interactive dependency graphs and call-flow visualization
+- Class browser with impact analysis and lint
+- AI chat agent that reads your actual codebase (tool-calling)
+- Engine-specific explorers: GAS · Blueprint mapping · Animator · BehaviorTree · StateTree
+
+> UI language: **English and Korean only** · Local LLM: **Ollama** supported · Non-commercial, features may not be perfect
+
+Full documentation → [gdep-cli/web/README.md](./gdep-cli/web/README.md)
 
 ---
 

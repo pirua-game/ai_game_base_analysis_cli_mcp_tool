@@ -2,6 +2,7 @@
 
 **在 0.5 秒內理解 Unity/UE5/Axmol 大型專案，讓 Claude/Cursor 真正讀懂程式碼**
 
+[![CI](https://github.com/pirua-game/gdep/actions/workflows/ci.yml/badge.svg)](https://github.com/pirua-game/gdep/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/gdep)](https://pypi.org/project/gdep/)
 [![npm](https://img.shields.io/npm/v/gdep-mcp)](https://www.npmjs.com/package/gdep-mcp)
 
@@ -120,6 +121,39 @@ gdep scan {path} --circular --top 15   # 結構分析
 gdep init {path}                       # 建立 .gdep/AGENTS.md
 gdep advise {path}                     # 架構診斷 + 建議
 ```
+
+---
+
+## 🖥️ Web UI — 在瀏覽器中視覺化分析
+
+安裝完成後無需終端，直接在瀏覽器中查看相依圖、呼叫流程並使用 AI 聊天。
+
+**第一步 — 安裝**（在專案根目錄執行一次）
+
+```
+install.bat          # Windows
+./install.sh         # macOS / Linux
+```
+
+**第二步 — 啟動**
+
+```
+run.bat              # Windows — 自動在兩個獨立終端中啟動後端 + 前端
+./run.sh             # macOS/Linux — 終端 1：後端  (http://localhost:8000)
+./run_front.sh       # macOS/Linux — 終端 2：前端 (http://localhost:5173)
+```
+
+開啟 `http://localhost:5173` → 在側邊欄中指定專案原始碼目錄
+
+主要功能：
+- 互動式相依圖與呼叫流程視覺化
+- 類別瀏覽器（含影響分析與 lint）
+- 讀取實際程式碼的 AI 聊天智能體（工具呼叫）
+- 引擎專屬探索器：GAS · Blueprint 對應 · Animator · BehaviorTree · StateTree
+
+> UI 語言：**僅支援英語與韓語** · 本機 LLM：支援 **Ollama** · 非商業工具，部分功能可能尚不完善
+
+詳細文件 → [gdep-cli/web/README.md](./gdep-cli/web/README.md)
 
 ---
 
