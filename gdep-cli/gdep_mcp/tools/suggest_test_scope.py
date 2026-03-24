@@ -66,17 +66,17 @@ def run(project_path: str, class_name: str, depth: int = 3) -> str:
 
         sections: list[str] = [
             f"## Test Scope: {target} (Depth: {depth})\n",
-            f"- 직접 영향 클래스: {affected_count}개",
-            f"- 테스트 파일 발견: {test_count}개\n",
+            f"- Affected classes: {affected_count}",
+            f"- Test files found: {test_count}\n",
         ]
 
         if not test_files:
             sections.append(
-                "테스트 파일을 찾지 못했습니다.\n"
-                f"`{target}`을 커버하는 새 테스트를 작성하는 것을 권장합니다."
+                "No test files found.\n"
+                f"Consider writing new tests to cover `{target}`."
             )
         else:
-            sections.append("### 실행해야 할 테스트 파일\n")
+            sections.append("### Test files to run\n")
             for item in test_files:
                 path_str = item.get("path", "")
                 engine = item.get("engine", "?")

@@ -195,51 +195,51 @@ def run(project_path: str, commit_ref: str | None = None) -> str:
 
         # ── Format report ──────────────────────────────────────────────
         lines: list[str] = [
-            f"## PR 아키텍처 영향 요약",
-            f"  Baseline: `{commit}` vs 현재 워킹 트리  |  {profile.display}",
+            f"## PR Architecture Impact Summary",
+            f"  Baseline: `{commit}` vs current working tree  |  {profile.display}",
             "",
-            "### 변경 통계",
-            f"- 변경된 파일: **{parsed['changed_files']}개**",
-            f"- 신규 순환참조: **+{parsed['new_cycles_count']}개**",
-            f"- 해소된 순환참조: **-{parsed['resolved_cycles_count']}개**",
+            "### Change Statistics",
+            f"- Changed files: **{parsed['changed_files']}**",
+            f"- New circular refs: **+{parsed['new_cycles_count']}**",
+            f"- Resolved circular refs: **-{parsed['resolved_cycles_count']}**",
         ]
 
         net = parsed["resolved_cycles_count"] - parsed["new_cycles_count"]
         if net > 0:
-            lines.append(f"- 순환참조 순감소: **-{net}개** (긍정적)")
+            lines.append(f"- Net circular ref change: **-{net}** (positive)")
         elif net < 0:
-            lines.append(f"- 순환참조 순증가: **+{-net}개** (주의 필요)")
+            lines.append(f"- Net circular ref change: **+{-net}** (caution)")
         else:
-            lines.append("- 순환참조 순변화: 없음")
+            lines.append("- Net circular ref change: none")
 
         # High-coupling involvement
         if affected_high:
             lines += [
                 "",
-                "### 고결합 클래스가 포함된 신규 순환참조",
+                "### New circular refs involving high-coupling classes",
             ]
             for cls, score in affected_high[:5]:
-                lines.append(f"- **{cls}** (결합도 {score}) -새 순환참조에 포함됨")
+                lines.append(f"- **{cls}** (coupling score {score}) — involved in new circular ref")
             total_reach = sum(s for _, s in affected_high[:5])
             lines.append(
-                f"\n> 위 클래스들의 변경은 총 {total_reach}개 클래스에 파급 영향을 줄 수 있습니다."
+                f"\n> Changes to these classes may impact up to {total_reach} other classes."
             )
 
         # New cycle chains
         if parsed["new_cycles"]:
-            lines += ["", "### 신규 순환참조 체인"]
+            lines += ["", "### New circular reference chains"]
             for chain in parsed["new_cycles"][:10]:
                 lines.append(f"- `{chain}`")
             if len(parsed["new_cycles"]) > 10:
-                lines.append(f"- _(외 {len(parsed['new_cycles']) - 10}개)_")
+                lines.append(f"- _({len(parsed['new_cycles']) - 10} more)_")
 
         # Resolved cycle chains
         if parsed["resolved_cycles"]:
-            lines += ["", "### 해소된 순환참조 (긍정적)"]
+            lines += ["", "### Resolved circular references (positive)"]
             for chain in parsed["resolved_cycles"][:5]:
                 lines.append(f"- ~~`{chain}`~~")
             if len(parsed["resolved_cycles"]) > 5:
-                lines.append(f"- _(외 {len(parsed['resolved_cycles']) - 5}개)_")
+                lines.append(f"- _({len(parsed['resolved_cycles']) - 5} more)_")
 
         # Recommendations
         recs: list[str] = []
@@ -247,21 +247,21 @@ def run(project_path: str, commit_ref: str | None = None) -> str:
         if affected_high:
             top_cls, top_score = affected_high[0]
             recs.append(
-                f"{idx}. **{top_cls}** (결합도 {top_score}) 변경이 순환참조를 유발 -"
-                "Interface 분리 또는 의존 방향 역전 검토"
+                f"{idx}. **{top_cls}** (coupling {top_score}) change introduced circular ref — "
+                "consider Interface segregation or dependency inversion"
             )
             idx += 1
         if net < 0:
             recs.append(
-                f"{idx}. 순환참조 순증가 ({-net}개) -"
-                "신규 참조 방향을 재검토하고 단방향 의존으로 정리 권장"
+                f"{idx}. Net increase of {-net} circular ref(s) — "
+                "review new dependency directions and prefer unidirectional dependencies"
             )
             idx += 1
         if parsed["changed_files"] == 0 and parsed["new_cycles_count"] == 0:
-            recs.append(f"{idx}. 변경 없음 -현재 워킹 트리가 {commit}와 동일합니다.")
+            recs.append(f"{idx}. No changes detected — working tree matches `{commit}`.")
 
         if recs:
-            lines += ["", "### 권장 검토 포인트"]
+            lines += ["", "### Recommended review points"]
             lines += recs
 
         return "\n".join(lines)

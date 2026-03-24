@@ -386,7 +386,7 @@ def _build_lfs_fallback(source_path: str, cpp_class: str | None = None) -> str:
 
     content_root = find_content_root(source_path)
     if content_root is None:
-        return "Content 폴더를 찾을 수 없습니다."
+        return "Content folder not found."
 
     # ── 1. uasset 파일 목록 수집 (LFS 포인터 여부 샘플 확인) ──────────────
     asset_files: list[Path] = []
@@ -450,35 +450,35 @@ def _build_lfs_fallback(source_path: str, cpp_class: str | None = None) -> str:
 
         lines = [
             f"# Blueprint search for `{cpp_class}` (LFS mode — filename matching)",
-            "> ⚠️ Git LFS 포인터 프로젝트입니다. 파일명 유사도 기반 결과입니다.\n",
+            "> [!] Git LFS pointer project -- results based on filename similarity.\n",
         ]
         if matched:
-            lines.append(f"## 매칭된 에셋 ({len(matched)}개)\n")
+            lines.append(f"## Matched assets ({len(matched)})\n")
             for stem, label in matched[:40]:
                 lines.append(f"  - `{stem}` [{label}]")
             if len(matched) > 40:
                 lines.append(f"  ... +{len(matched)-40} more")
         else:
-            lines.append(f"`{cpp_class}` 와 유사한 이름의 Blueprint를 찾지 못했습니다.")
-            lines.append("\n전체 BP 목록은 cpp_class 없이 조회하세요.")
+            lines.append(f"No Blueprint found with a name similar to `{cpp_class}`.")
+            lines.append("\nQuery without cpp_class to see the full BP list.")
         return "\n".join(lines)
 
     # ── 5. 전체 목록 모드 ─────────────────────────────────────────────────
     total = len(asset_files)
-    lfs_note = "⚠️ Git LFS 포인터 프로젝트" if is_lfs else ""
+    lfs_note = "[!] Git LFS pointer project" if is_lfs else ""
     lines = [
         f"# Blueprint Catalogue [{proj_root.name}]  {lfs_note}",
         f"  Total .uasset files: {total}",
         f"  C++ header files (Source): {len(cpp_classes)}",
         "",
-        "> Git LFS 포인터 파일만 있어 바이너리 파싱이 불가합니다.",
-        "> 파일명 패턴 기반 분류 결과를 제공합니다.\n",
+        "> Only LFS pointer files present -- binary parsing unavailable.",
+        "> Results based on filename pattern classification.\n",
     ]
 
     for label, stems in sorted(groups.items()):
         if not stems:
             continue
-        lines.append(f"## {label} ({len(stems)}개)")
+        lines.append(f"## {label} ({len(stems)})")
         for stem in stems[:30]:
             lines.append(f"  - `{stem}`")
         if len(stems) > 30:
@@ -486,7 +486,7 @@ def _build_lfs_fallback(source_path: str, cpp_class: str | None = None) -> str:
         lines.append("")
 
     if cpp_classes:
-        lines.append(f"## C++ 클래스 목록 (Source, {len(cpp_classes)}개)")
+        lines.append(f"## C++ class list (Source, {len(cpp_classes)} files)")
         for cls in sorted(cpp_classes)[:40]:
             lines.append(f"  - `{cls}`")
         if len(cpp_classes) > 40:

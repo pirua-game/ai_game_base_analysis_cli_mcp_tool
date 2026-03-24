@@ -704,11 +704,11 @@ def _format_test_scope_console(target_class: str, depth: int,
     src_root = Path(src)
     lines = [
         f"\n── Test Scope: {target_class} (Depth: {depth}) ──\n",
-        f"  직접 영향 클래스: {affected_count}개",
-        f"  테스트 파일 발견: {len(matched)}개\n",
+        f"  Affected classes: {affected_count}",
+        f"  Test files found: {len(matched)}\n",
     ]
     if not matched:
-        lines.append("  (테스트 파일 없음 — 새 테스트 작성을 권장합니다)")
+        lines.append("  (No test files found — consider writing new tests)")
     else:
         for i, item in enumerate(matched):
             connector = "└──" if i == len(matched) - 1 else "├──"

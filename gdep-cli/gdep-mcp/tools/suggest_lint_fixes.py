@@ -72,9 +72,9 @@ def run(project_path: str, rule_ids: list[str] | None = None) -> str:
 
         sections: list[str] = [
             f"## Lint Fix Suggestions\n",
-            f"- 전체 이슈: {len(issues)}개",
-            f"- 자동 수정 제안 가능: {len(fixable)}개",
-            f"- 수동 수정 필요: {unfixable_count}개\n",
+            f"- Total issues: {len(issues)}",
+            f"- Auto-fixable: {len(fixable)}",
+            f"- Manual fix required: {unfixable_count}\n",
         ]
 
         # Group by rule_id
@@ -84,7 +84,7 @@ def run(project_path: str, rule_ids: list[str] | None = None) -> str:
             by_rule[issue.get("rule_id", "?")].append(issue)
 
         for rule_id, rule_issues in sorted(by_rule.items()):
-            sections.append(f"### {rule_id}  ({len(rule_issues)}개 발견)\n")
+            sections.append(f"### {rule_id}  ({len(rule_issues)} found)\n")
             for issue in rule_issues:
                 loc = issue.get("class_name", "?")
                 if issue.get("method_name"):

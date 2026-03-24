@@ -524,7 +524,7 @@ def _lfs_fallback_anim(project_path: str, asset_type: str) -> str:
     """LFS 포인터 프로젝트에서 파일명 기반 Animation 에셋 목록을 반환."""
     content_root = _find_content_root(project_path)
     if content_root is None:
-        return "Content 폴더를 찾을 수 없습니다."
+        return "Content folder not found."
 
     abp_files: list[str] = []
     montage_files: list[str] = []
@@ -545,24 +545,24 @@ def _lfs_fallback_anim(project_path: str, asset_type: str) -> str:
 
     lines = [
         f"# Animation Assets [{Path(project_path).name}]",
-        "> ⚠️ Git LFS 포인터 프로젝트 — 파일명 기반 목록 (바이너리 파싱 불가)\n",
+        "> [!] Git LFS pointer project -- filename-based list (binary parsing unavailable)\n",
     ]
     if asset_type in ('all', 'abp'):
-        lines.append(f"## AnimBlueprint (ABP_*) — {len(abp_files)}개")
+        lines.append(f"## AnimBlueprint (ABP_*) -- {len(abp_files)} assets")
         for s in abp_files[:50]:
             lines.append(f"  - `{s}`")
         if len(abp_files) > 50:
             lines.append(f"  ... +{len(abp_files)-50} more")
         lines.append("")
     if asset_type in ('all', 'montage'):
-        lines.append(f"## Animation Montage (AM_*) — {len(montage_files)}개")
+        lines.append(f"## Animation Montage (AM_*) -- {len(montage_files)} assets")
         for s in montage_files[:50]:
             lines.append(f"  - `{s}`")
         if len(montage_files) > 50:
             lines.append(f"  ... +{len(montage_files)-50} more")
         lines.append("")
     if not abp_files and not montage_files:
-        lines.append("ABP_ / AM_ 패턴에 해당하는 에셋을 찾지 못했습니다.")
+        lines.append("No assets matching ABP_ / AM_ pattern found.")
     return "\n".join(lines)
 
 

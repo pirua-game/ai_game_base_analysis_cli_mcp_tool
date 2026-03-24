@@ -420,8 +420,8 @@ def analyze_behavior_tree(project_path: str,
         if bt_names:
             lines = [
                 f"# BehaviorTree Assets [{Path(project_path).name}]",
-                "> ⚠️ Git LFS 포인터 프로젝트 — 파일명 기반 목록 (바이너리 파싱 불가)\n",
-                f"## BehaviorTree (BT_*) — {len(bt_names)}개",
+                "> [!] Git LFS pointer project -- filename-based list (binary parsing unavailable)\n",
+                f"## BehaviorTree (BT_*) -- {len(bt_names)} assets",
             ]
             for s in bt_names[:50]:
                 lines.append(f"  - `{s}`")
@@ -486,8 +486,8 @@ def analyze_state_tree(project_path: str,
         if st_names:
             lines = [
                 f"# StateTree Assets [{Path(project_path).name}]",
-                "> ⚠️ Git LFS 포인터 프로젝트 — 파일명 기반 목록 (바이너리 파싱 불가)\n",
-                f"## StateTree (ST_*) — {len(st_names)}개",
+                "> [!] Git LFS pointer project -- filename-based list (binary parsing unavailable)\n",
+                f"## StateTree (ST_*) -- {len(st_names)} assets",
             ]
             for s in st_names[:50]:
                 lines.append(f"  - `{s}`")
