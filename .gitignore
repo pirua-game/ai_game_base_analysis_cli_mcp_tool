@@ -2,6 +2,7 @@
 # 1. C# / .NET 관련 (Visual Studio)
 # ==========================================
 bin/
+!gdep-cli/gdep/bin/
 obj/
 *.user
 *.userosscache
