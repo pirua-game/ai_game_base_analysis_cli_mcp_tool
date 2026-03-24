@@ -958,7 +958,7 @@ def advise(profile: ProjectProfile,
 def _call_llm_for_advice(context: str, focus_class: str | None) -> str:
     """Call configured LLM with structured context. Returns '' on any failure."""
     try:
-        from .llm_provider import load_config, chat
+        from .llm_provider import chat, load_config
         cfg = load_config()
         if not cfg:
             return ""

@@ -16,8 +16,8 @@ _GDEP_ROOT = Path(__file__).parent.parent.parent
 if str(_GDEP_ROOT) not in sys.path:
     sys.path.insert(0, str(_GDEP_ROOT))
 
-from gdep.runner import _load_cs_cache, _src, ANSI_ESCAPE
 from gdep.detector import detect
+from gdep.runner import ANSI_ESCAPE, _load_cs_cache, _src
 
 
 def _parse_diff_text(text: str) -> dict:
@@ -195,7 +195,7 @@ def run(project_path: str, commit_ref: str | None = None) -> str:
 
         # ── Format report ──────────────────────────────────────────────
         lines: list[str] = [
-            f"## PR Architecture Impact Summary",
+            "## PR Architecture Impact Summary",
             f"  Baseline: `{commit}` vs current working tree  |  {profile.display}",
             "",
             "### Change Statistics",

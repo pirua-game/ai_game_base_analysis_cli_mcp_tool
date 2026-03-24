@@ -37,15 +37,15 @@ _GDEP_ROOT = _HERE.parent                   # gdep-cli/
 if str(_GDEP_ROOT) not in sys.path:
     sys.path.insert(0, str(_GDEP_ROOT))
 
-from mcp.server.fastmcp import FastMCP
+from gdep_mcp.tools.analyze_axmol_events import run as _axmol_events_run
 from gdep_mcp.tools.analyze_impact_and_risk import run as _impact_run
 from gdep_mcp.tools.explore_class_semantics import run as _semantics_run
 from gdep_mcp.tools.inspect_architectural_health import run as _health_run
-from gdep_mcp.tools.trace_gameplay_flow import run as _flow_run
-from gdep_mcp.tools.suggest_test_scope import run as _test_scope_run
 from gdep_mcp.tools.suggest_lint_fixes import run as _lint_fixes_run
+from gdep_mcp.tools.suggest_test_scope import run as _test_scope_run
 from gdep_mcp.tools.summarize_project_diff import run as _diff_summary_run
-from gdep_mcp.tools.analyze_axmol_events import run as _axmol_events_run
+from gdep_mcp.tools.trace_gameplay_flow import run as _flow_run
+from mcp.server.fastmcp import FastMCP
 
 # ── 추가 분석 모듈 (3~7단계 기능) — 로드 실패해도 서버는 기동됨 ──
 try:
@@ -706,8 +706,8 @@ def get_architecture_advice(project_path: str,
                       If None, the highest-coupling class is used automatically.
     """
     try:
-        from gdep.detector import detect
         from gdep import runner
+        from gdep.detector import detect
         profile = detect(project_path)
         result = runner.advise(profile, focus_class=focus_class)
         if not result.ok:

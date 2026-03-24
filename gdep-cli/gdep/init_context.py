@@ -205,8 +205,8 @@ def _append_scan_snapshot(lines: list[str], profile, src_path: str) -> None:
         lines += [
             "## Codebase Snapshot",
             "",
-            f"| Metric | Value |",
-            f"|--------|-------|",
+            "| Metric | Value |",
+            "|--------|-------|",
             f"| Files | **{summary.get('fileCount', '?')}** |",
             f"| Classes | **{summary.get('classCount', '?')}** |",
             f"| Circular deps | **{summary.get('cycleCount', 0)}** |",

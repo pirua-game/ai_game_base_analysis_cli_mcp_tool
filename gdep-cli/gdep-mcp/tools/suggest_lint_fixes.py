@@ -71,7 +71,7 @@ def run(project_path: str, rule_ids: list[str] | None = None) -> str:
             )
 
         sections: list[str] = [
-            f"## Lint Fix Suggestions\n",
+            "## Lint Fix Suggestions\n",
             f"- Total issues: {len(issues)}",
             f"- Auto-fixable: {len(fixable)}",
             f"- Manual fix required: {unfixable_count}\n",

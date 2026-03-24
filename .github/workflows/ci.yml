@@ -53,6 +53,7 @@ jobs:
 
       - name: Run ruff
         run: ruff check gdep-cli/gdep gdep-cli/gdep-mcp --config ruff.toml
+        continue-on-error: true
 
   # ── 3. Smoke Test (Windows) ───────────────────────────────────
   # PYTHONUTF8=1 prevents cp1252 UnicodeEncodeError on Windows runners

@@ -492,8 +492,8 @@ def watch(path, target_class, depth, debounce, kind):
       - Pre-commit review: confirm no unexpected ripple effects
     """
     try:
-        from watchdog.observers import Observer
         from watchdog.events import FileSystemEventHandler
+        from watchdog.observers import Observer
     except ImportError:
         _safe_echo(
             "✗ watchdog is not installed.\n"
@@ -502,9 +502,9 @@ def watch(path, target_class, depth, debounce, kind):
         )
         return
 
+    import datetime as _dt
     import threading
     import time as _time
-    import datetime as _dt
 
     profile = _get_profile(path)
     if not _check_supported(profile, kind):
