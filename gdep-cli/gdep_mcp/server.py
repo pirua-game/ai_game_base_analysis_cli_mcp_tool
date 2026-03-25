@@ -123,10 +123,14 @@ def get_project_context(project_path: str) -> str:
 
 @mcp.tool()
 def analyze_impact_and_risk(project_path: str, class_name: str,
-                             detail_level: str = "full",
+                             detail_level: str = "summary",
                              query: str | None = None) -> str:
     """
     Analyze the blast radius and risks before modifying a class.
+
+    ⚠️ CRITICAL: Always call with detail_level="summary" first.
+    Only use detail_level="full" if the user explicitly asks for the complete impact tree.
+    Use query= to narrow results before escalating to "full".
 
     USE THIS TOOL WHEN:
     - User says "I want to refactor / modify / rename / delete class X"
@@ -142,8 +146,8 @@ def analyze_impact_and_risk(project_path: str, class_name: str,
     Args:
         project_path: Absolute path to Scripts (Unity) or Source (UE5) folder.
         class_name:   Class to analyze. E.g. "BattleManager", "APlayerCharacter"
-        detail_level: "summary" — affected class count + top-5 risk items (fast).
-                      "full"    — complete impact tree + all lint issues (default).
+        detail_level: "summary" (default) — affected class count + top-5 risk items (fast).
+                      "full"    — complete impact tree + all lint issues (expensive, use sparingly).
         query:        Optional filter string — only results containing this
                       class name or pattern are included. E.g. "Battle", "Manager"
     """
@@ -483,6 +487,10 @@ def analyze_ue5_gas(project_path: str,
     """
     Analyze Gameplay Ability System (GAS) usage in a UE5 project.
 
+    ⚠️ CRITICAL: Always call with detail_level="summary" first.
+    Only use detail_level="full" if the user explicitly requests the full GAS report.
+    Large projects may have 100+ tags — use category= or query= to narrow results before using "full".
+
     Scans C++ source and .uasset binaries to extract:
     - GameplayTags used (FGameplayTag, FGameplayTagContainer)
     - GameplayAbilities and their activation conditions
@@ -496,17 +504,17 @@ def analyze_ue5_gas(project_path: str,
         class_name:   Optional — filter results to a specific class.
                       If None, scans the entire project.
         detail_level: "summary" (default) — compact overview with tag distribution.
-                      "full" — complete report (may be large for big projects).
+                      "full" — complete report (expensive; may return 100+ tags for large projects).
         category:     Tag prefix filter. e.g. "Event" → only Event.* tags and
                       abilities/effects that reference those tags.
         query:        Keyword search across class names, tag names, and asset names
                       (case-insensitive substring match).
 
     Usage examples:
-        analyze_ue5_gas(path)                          # compact summary
-        analyze_ue5_gas(path, detail_level="full")     # complete report
+        analyze_ue5_gas(path)                          # compact summary (always start here)
         analyze_ue5_gas(path, category="Event")        # Event.* tags only
         analyze_ue5_gas(path, query="Dash")            # everything related to Dash
+        analyze_ue5_gas(path, detail_level="full")     # full report (only if user explicitly asked)
     """
     if not _UE5_GAS_AVAILABLE:
         return (

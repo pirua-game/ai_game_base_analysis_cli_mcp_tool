@@ -288,6 +288,7 @@ public class MethodCallAnalyzer
 
             if (targetMethod == null) continue;
             if (IsNoisyCall(targetMethod)) continue;
+            if (targetClass != null && IsNoisyClass(targetClass)) continue;
 
             bool isLeaf = focusClasses != null
                 && targetClass != null
@@ -559,6 +560,27 @@ public class MethodCallAnalyzer
         // 네임스페이스 제거
         return typeName.Split('.').Last().Trim().TrimEnd('?');
     }
+
+    private static readonly HashSet<string> NoisyClasses = new()
+    {
+        // System 기본 타입
+        "Math", "MathF", "Convert", "BitConverter", "Enum",
+        "BigInteger", "Complex",
+        // 컬렉션/LINQ 구현 내부
+        "Enumerable", "Queryable", "ParallelEnumerable",
+        // 문자열/텍스트
+        "StringBuilder", "Regex", "Encoding",
+        // Unity 유틸리티 (게임 로직이 아닌 엔진 내장)
+        "Debug", "Mathf", "Vector2", "Vector3", "Vector4", "Quaternion",
+        "Color", "Color32", "Time", "Input", "Screen",
+        "Physics", "Physics2D", "Resources", "PlayerPrefs",
+        "Random", "Gizmos", "GL",
+    };
+
+    private bool IsNoisyClass(string className) =>
+        NoisyClasses.Contains(className) ||
+        className.StartsWith("System.") ||
+        (className.StartsWith("UnityEngine.") && !className.Contains("Custom"));
 
     private static readonly HashSet<string> NoisyCalls = new()
     {

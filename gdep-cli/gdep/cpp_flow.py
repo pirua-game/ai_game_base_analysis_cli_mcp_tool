@@ -22,6 +22,13 @@ _IGNORE_CALLS = {
     "Schedule", "unschedule",  # Cocos2d-x scheduler (handled separately)
 }
 
+_IGNORE_CLASS_PREFIXES = (
+    "std::", "boost::", "glm::",
+    "cocos2d::",        # Cocos2d-x 내부 (디렉토리 외에 호출 수준도 차단)
+    "nlohmann::",       # JSON 라이브러리
+    "__",               # 컴파일러 내부 심볼
+)
+
 _DELEGATE_FUNC_NAMES = {
     "bind", "connect", "disconnect", "addEventListenerWithSceneGraphPriority",
     "addEventListenerWithFixedPriority", "addEventListener",
@@ -157,6 +164,8 @@ def _extract_calls(body: str) -> list[tuple[str, str, str]]:
             continue
 
         if method in _IGNORE_CALLS:
+            continue
+        if any(method.startswith(p) for p in _IGNORE_CLASS_PREFIXES):
             continue
         if len(method) < 2:
             continue

@@ -22,6 +22,13 @@ _IGNORE_CALLS = {
     "INDEX_NONE", "ECC_Visibility",
 }
 
+_IGNORE_CLASS_PREFIXES = (
+    "std::", "boost::",
+    "TArray::", "TMap::", "TSet::", "TQueue::",   # UE5 컨테이너 내부 메서드
+    "FString::", "FName::", "FText::",             # UE5 문자열 타입 내부
+    "__",                                          # 컴파일러 내부 심볼
+)
+
 _DELEGATE_FUNC_NAMES = {
     "BindAction", "BindDelegate", "BindAxis", "BindUFunction",
     "AddDynamic", "AddUFunction", "AddWeakLambda", "AddLambda",
@@ -190,6 +197,8 @@ def _extract_calls(body):
         else:
             continue
         if method in _IGNORE_CALLS:
+            continue
+        if any(method.startswith(p) for p in _IGNORE_CLASS_PREFIXES):
             continue
         if len(method) < 2:
             continue
