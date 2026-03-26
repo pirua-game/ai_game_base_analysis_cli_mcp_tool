@@ -140,6 +140,7 @@ class ProjectBlueprintMap:
     module_name:  str
     blueprints:   dict[str, BlueprintMapping]       = field(default_factory=dict)
     cpp_to_bps:   dict[str, list[BlueprintMapping]] = field(default_factory=dict)
+    meta:         object                            = field(default=None)  # AnalysisMetadata
 
 # ---------------------------------------------------------------------------
 # Module name auto-detection (samples uassets to find dominant /Script/X)
@@ -182,17 +183,28 @@ def _detect_module_from_assets(content_root: Path, hint: str) -> str:
 # Per-asset extraction
 # ---------------------------------------------------------------------------
 
+_PARSE_LFS = "lfs"  # sentinel: Git LFS stub
+_PARSE_ERR = "err"  # sentinel: file read error
+
+
 def _parse_asset(asset_path: Path, content_root: Path,
-                 module_name: str) -> BlueprintMapping | None:
-    """Parse one .uasset and return a BlueprintMapping, or None if not a project BP."""
+                 module_name: str):
+    """Parse one .uasset and return a BlueprintMapping, 'lfs', 'err', or None.
+
+    Returns:
+      BlueprintMapping  — project BP found
+      None              — successfully read, not a project BP
+      _PARSE_LFS        — Git LFS stub (binary content unavailable)
+      _PARSE_ERR        — file read error
+    """
     try:
         data = asset_path.read_bytes()
     except Exception:
-        return None
+        return _PARSE_ERR
 
-    # Skip Git LFS stubs
-    if data.startswith(b'version https://git-lfs'):
-        return None
+    # Git LFS stub detection
+    if len(data) < 300 and data.lstrip().startswith(b'version https://git-lfs'):
+        return _PARSE_LFS
 
     module_bytes = module_name.encode('ascii')
 
@@ -501,8 +513,15 @@ def _build_lfs_fallback(source_path: str, cpp_class: str | None = None) -> str:
 
 def _bp_map_to_dict(bp_map: ProjectBlueprintMap) -> dict:
     import dataclasses
+    meta_obj = bp_map.meta
+    bp_map.meta = None
     d = dataclasses.asdict(bp_map)
+    bp_map.meta = meta_obj
     d["project_root"] = str(bp_map.project_root)
+    if meta_obj is not None:
+        dm = dataclasses.asdict(meta_obj)
+        dm["confidence"] = meta_obj.confidence.value
+        d["meta"] = dm
     return d
 
 
@@ -519,15 +538,32 @@ def _bp_map_from_dict(d: dict) -> ProjectBlueprintMap:
             event_nodes=evs, variables=vars_,
         )
 
+    from .confidence import AnalysisMetadata, ConfidenceTier
     bps_dict = {k: _bp(v) for k, v in d.get("blueprints", {}).items()}
     cpp_dict: dict[str, list[BlueprintMapping]] = {}
     for cpp_cls, lst in d.get("cpp_to_bps", {}).items():
         cpp_dict[cpp_cls] = [_bp(x) for x in lst]
+    meta = None
+    if "meta" in d and d["meta"]:
+        try:
+            md = d["meta"]
+            meta = AnalysisMetadata(
+                source_method=md.get("source_method", ""),
+                confidence=ConfidenceTier(md.get("confidence", "none")),
+                scanned=md.get("scanned", 0),
+                parsed=md.get("parsed", 0),
+                skipped_lfs=md.get("skipped_lfs", 0),
+                skipped_error=md.get("skipped_error", 0),
+                ue_version=md.get("ue_version", ""),
+            )
+        except Exception:
+            pass
     return ProjectBlueprintMap(
         project_root=Path(d["project_root"]),
         module_name=d["module_name"],
         blueprints=bps_dict,
         cpp_to_bps=cpp_dict,
+        meta=meta,
     )
 
 
@@ -542,6 +578,8 @@ def _build_bp_map_raw(source_path: str, progress_cb=None) -> ProjectBlueprintMap
     Returns:
         ProjectBlueprintMap with .blueprints and .cpp_to_bps populated.
     """
+    from .confidence import AnalysisMetadata, ConfidenceTier
+    from .detector import _read_unreal_version
     from .ue5_blueprint_refs import detect_module_name, find_content_root
 
     content_root = find_content_root(source_path)
@@ -555,9 +593,18 @@ def _build_bp_map_raw(source_path: str, progress_cb=None) -> ProjectBlueprintMap
     hint_module = detect_module_name(source_path)
     module_name = _detect_module_from_assets(content_root, hint_module)
 
+    meta = AnalysisMetadata(
+        source_method="binary_NativeParentClass + pattern_match",
+        confidence=ConfidenceTier.MEDIUM,
+    )
+    ue_ver = _read_unreal_version(content_root.parent)
+    if ue_ver:
+        meta.ue_version = ue_ver
+
     bp_map = ProjectBlueprintMap(
         project_root=content_root.parent,
         module_name=module_name,
+        meta=meta,
     )
 
     # Collect .uasset files (skip .umap — maps rarely define BPs)
@@ -570,6 +617,7 @@ def _build_bp_map_raw(source_path: str, progress_cb=None) -> ProjectBlueprintMap
 
     total     = len(asset_files)
     completed = [0]
+    meta.scanned = total
 
     max_workers = min(16, (os.cpu_count() or 4) * 2)
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -580,9 +628,18 @@ def _build_bp_map_raw(source_path: str, progress_cb=None) -> ProjectBlueprintMap
             if progress_cb:
                 progress_cb(completed[0], total)
             try:
-                mapping = fut.result()
+                result = fut.result()
             except Exception:
+                meta.skipped_error += 1
                 continue
+            if result is _PARSE_LFS:
+                meta.skipped_lfs += 1
+                continue
+            if result is _PARSE_ERR:
+                meta.skipped_error += 1
+                continue
+            meta.parsed += 1
+            mapping = result
             if not mapping:
                 continue
 
@@ -731,6 +788,11 @@ def format_full_project_map(bp_map: ProjectBlueprintMap,
 
     lines = [
         f"# Blueprint <-> C++ Map  [{bp_map.module_name}]",
+        "",
+    ]
+    if bp_map.meta:
+        lines += [bp_map.meta.to_header(), ""]
+    lines += [
         f"  Total blueprints: {len(bp_map.blueprints)}",
         f"  C++ classes with BP implementations: {len(bp_map.cpp_to_bps)}\n",
     ]

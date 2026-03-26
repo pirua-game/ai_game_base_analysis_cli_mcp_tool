@@ -87,11 +87,19 @@ gdep MCP:   直接相依 2 個 · 間接 200+ UI 類別 · 資源: prefabs/UI/co
 | `find_unity_event_bindings` | Inspector 綁定方法（程式碼搜尋不到的區域） |
 | `analyze_unity_animator` | Animator 狀態機結構 |
 | `analyze_axmol_events` | Axmol EventDispatcher/Scheduler 綁定映射 |
-| `analyze_ue5_gas` | GAS Ability / Effect / Tag / ASC 全量 |
+| `analyze_ue5_gas` | GAS Ability / Effect / Tag / ASC 全量 — 包含**信賴度標頭** + IS-A 資產角色分類 |
 | `analyze_ue5_behavior_tree` | BehaviorTree 資源結構 |
 | `analyze_ue5_state_tree` | StateTree 資源結構 |
 | `analyze_ue5_animation` | ABP 狀態 + Montage + GAS Notify |
-| `analyze_ue5_blueprint_mapping` | C++ 類別 → Blueprint 實作對應 |
+| `analyze_ue5_blueprint_mapping` | C++ 類別 → Blueprint 實作對應 — 包含**信賴度標頭** |
+
+### UE5 信賴度透明化
+
+每個 UE5 分析回應的頂部均包含：
+```
+> Confidence: **MEDIUM** | Coverage: 4633/4633 (100.0%) | UE version: 5.6 (validated)
+```
+`gdep init` 產生的 `.gdep/AGENTS.md` 提供各信賴等級對應的 AI Agent 行為指南。
 
 > 詳細設定 → [gdep-cli/gdep_mcp/README_ZH_TW.md](./gdep-cli/gdep_mcp/README_ZH_TW.md)
 

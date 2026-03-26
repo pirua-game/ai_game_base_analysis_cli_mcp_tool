@@ -99,11 +99,32 @@ pip install gdep "mcp[cli]"
 
 | 工具 | 说明 |
 |------|------|
-| `analyze_ue5_gas` | GA/GE/AS 类 + GameplayTag + ASC 使用处 |
+| `analyze_ue5_gas` | GA/GE/AS 类 + GameplayTag + ASC 使用处。包含**置信度标头**（分析方法/置信等级/覆盖率/UE版本）+ IS-A 资产角色分类（GA/GE/AS/ABP vs 仅引用）。过滤 GUID 噪声标签。 |
 | `analyze_ue5_behavior_tree` | BT_* .uasset → Task/Decorator/Service |
 | `analyze_ue5_state_tree` | ST_* .uasset → Task/AIController 连接 |
 | `analyze_ue5_animation` | ABP 状态机 + Montage 分段/插槽/GAS Notify |
-| `analyze_ue5_blueprint_mapping` | C++ 类 → Blueprint 实现映射 |
+| `analyze_ue5_blueprint_mapping` | C++ 类 → Blueprint 实现映射。包含**置信度标头**（覆盖率 + UE版本）。 |
+
+---
+
+## 🔍 UE5 置信度透明化输出
+
+`analyze_ue5_gas` 和 `analyze_ue5_blueprint_mapping` 在每个响应的顶部输出置信度标头：
+
+```
+> Analysis method: cpp_source_regex + binary_pattern_match
+> Confidence: **MEDIUM**
+> Coverage: 4633/4633 assets parsed (100.0%)
+> UE version: 5.6 (validated)
+```
+
+| 等级 | 依据 | 建议 |
+|------|------|------|
+| **HIGH** | C++ 源码直接解析 | 无需额外验证即可信任 |
+| **MEDIUM** | 二进制 NativeParentClass + 交叉引用 | 大多数情况可信；架构决策前建议交叉核实源码 |
+| **LOW** | 文件名启发式 / LFS 存根超过 50% | 仅作索引使用；变更前直接读取源文件 |
+
+`gdep init` 生成的 `.gdep/AGENTS.md` 包含各 Confidence 等级对应的 AI Agent 行为指南。
 
 ---
 

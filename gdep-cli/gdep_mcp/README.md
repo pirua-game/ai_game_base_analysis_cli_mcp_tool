@@ -102,11 +102,11 @@ pip install gdep "mcp[cli]"
 
 | Tool | Description |
 |------|-------------|
-| `analyze_ue5_gas` | GA/GE/AS classes + GameplayTag extraction + ASC usage |
+| `analyze_ue5_gas` | GA/GE/AS classes + GameplayTag extraction + ASC usage. Returns **confidence header** (method / tier / coverage / UE version) + IS-A asset role breakdown (GA / GE / AS / ABP vs referencer). Tag noise filtered (GUID segments rejected). |
 | `analyze_ue5_behavior_tree` | BT_* .uasset → Task/Decorator/Service/Blackboard |
 | `analyze_ue5_state_tree` | ST_* .uasset → Task/AIController connections |
 | `analyze_ue5_animation` | ABP state machine + Montage sections/slots/GAS Notify |
-| `analyze_ue5_blueprint_mapping` | C++ class → BP implementation mapping (K2 overrides/variables/GAS tags) |
+| `analyze_ue5_blueprint_mapping` | C++ class → BP implementation mapping (K2 overrides/variables/GAS tags). Returns **confidence header** with coverage and UE version. |
 
 ---
 
@@ -149,6 +149,36 @@ pip install gdep "mcp[cli]"
 "Find the Blueprint that inherits ARGameplayAbility_Dash"
 → analyze_ue5_blueprint_mapping(path, "ARGameplayAbility_Dash")
 ```
+
+---
+
+## 🔍 UE5 Confidence-Transparent Output
+
+Both `analyze_ue5_gas` and `analyze_ue5_blueprint_mapping` prefix every response with a confidence header:
+
+```
+> Analysis method: cpp_source_regex + binary_pattern_match
+> Confidence: **MEDIUM**
+> Coverage: 4633/4633 assets parsed (100.0%)
+> UE version: 5.6 (validated)
+```
+
+| Tier | Source | Guidance |
+|------|--------|----------|
+| **HIGH** | C++ source regex | Trust without additional verification |
+| **MEDIUM** | Binary NativeParentClass + cross-reference | Reliable; cross-check source before architecture decisions |
+| **LOW** | Filename heuristics / LFS stubs > 50% | Use as index only; read source files before making changes |
+
+`analyze_ue5_gas` also reports IS-A asset roles vs. mere referencers:
+```
+## Asset Roles
+  IS-A GA  (GA_*):  7
+  IS-A GE  (GE_*):  8
+  IS-A ABP (ABP_*): 3
+  References only:  14
+```
+
+`gdep init` generates a `.gdep/AGENTS.md` that guides AI agents on when to trust gdep results and when to cross-check source files directly.
 
 ---
 

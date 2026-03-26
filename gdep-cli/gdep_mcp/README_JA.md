@@ -85,11 +85,32 @@ pip install gdep "mcp[cli]"
 
 | ツール | 説明 |
 |--------|------|
-| `analyze_ue5_gas` | GA/GE/AS クラス + GameplayTag + ASC使用箇所 |
+| `analyze_ue5_gas` | GA/GE/AS クラス + GameplayTag + ASC使用箇所。**信頼度ヘッダー**（分析方法/信頼ティア/カバレッジ/UEバージョン）+ IS-Aアセット役割分類（GA/GE/AS/ABP vs 参照のみ）を含む。GUIDノイズタグをフィルタリング。 |
 | `analyze_ue5_behavior_tree` | BT_* .uasset → Task/Decorator/Service |
 | `analyze_ue5_state_tree` | ST_* .uasset → Task/AIController連携 |
 | `analyze_ue5_animation` | ABPステートマシン + Montageセクション/GAS Notify |
-| `analyze_ue5_blueprint_mapping` | C++クラス → BP実装マッピング |
+| `analyze_ue5_blueprint_mapping` | C++クラス → BP実装マッピング。**信頼度ヘッダー**（カバレッジ + UEバージョン）を含む。 |
+
+---
+
+## 🔍 UE5 信頼度透明化出力
+
+`analyze_ue5_gas` と `analyze_ue5_blueprint_mapping` はすべての応答の先頭に信頼度ヘッダーを出力します：
+
+```
+> Analysis method: cpp_source_regex + binary_pattern_match
+> Confidence: **MEDIUM**
+> Coverage: 4633/4633 assets parsed (100.0%)
+> UE version: 5.6 (validated)
+```
+
+| ティア | 根拠 | ガイダンス |
+|--------|------|----------|
+| **HIGH** | C++ソース直接解析 | 追加検証なしで信頼可能 |
+| **MEDIUM** | バイナリ NativeParentClass + 相互参照 | ほぼ信頼可能；アーキテクチャ決定前にソース確認推奨 |
+| **LOW** | ファイル名ヒューリスティック / LFS スタブ 50%超 | インデックスとして使用のみ；変更前にソースを直接確認 |
+
+`gdep init` が生成する `.gdep/AGENTS.md` に、Confidence レベル別のAIエージェント行動ガイドが含まれます。
 
 ---
 

@@ -99,11 +99,32 @@ pip install gdep "mcp[cli]"
 
 | 도구 | 설명 |
 |------|------|
-| `analyze_ue5_gas` | GA/GE/AS 클래스 + GameplayTag + ASC 사용처 |
+| `analyze_ue5_gas` | GA/GE/AS 클래스 + GameplayTag + ASC 사용처. **신뢰도 헤더** (분석 방법/신뢰 등급/커버리지/UE 버전) + IS-A 에셋 역할 구분 (GA/GE/AS/ABP vs 참조만) 포함. 태그 노이즈 필터링 (GUID 세그먼트 제거) 적용. |
 | `analyze_ue5_behavior_tree` | BT_* .uasset → Task/Decorator/Service/Blackboard |
 | `analyze_ue5_state_tree` | ST_* .uasset → Task/AIController 연결 |
 | `analyze_ue5_animation` | ABP 상태머신 + Montage 섹션/슬롯/GAS Notify |
-| `analyze_ue5_blueprint_mapping` | C++ 클래스 → BP 구현체 매핑 (K2 오버라이드/변수/GAS 태그) |
+| `analyze_ue5_blueprint_mapping` | C++ 클래스 → BP 구현체 매핑 (K2 오버라이드/변수/GAS 태그). **신뢰도 헤더** (커버리지 + UE 버전) 포함. |
+
+---
+
+## 🔍 UE5 신뢰도 투명화 출력
+
+`analyze_ue5_gas`와 `analyze_ue5_blueprint_mapping`은 모든 응답 상단에 신뢰도 헤더를 출력합니다:
+
+```
+> Analysis method: cpp_source_regex + binary_pattern_match
+> Confidence: **MEDIUM**
+> Coverage: 4633/4633 assets parsed (100.0%)
+> UE version: 5.6 (validated)
+```
+
+| 등급 | 근거 | 가이드 |
+|------|------|--------|
+| **HIGH** | C++ 소스 직접 파싱 | 추가 검증 없이 신뢰 가능 |
+| **MEDIUM** | 바이너리 NativeParentClass + 교차 검증 | 대부분 신뢰 가능; 아키텍처 결정 시 소스 교차 확인 |
+| **LOW** | 파일명 휴리스틱 / LFS 스텁 50% 초과 | 인덱스로만 사용; 변경 전 소스 파일 직접 확인 |
+
+`gdep init`으로 생성되는 `.gdep/AGENTS.md`에는 Confidence 레벨별 AI 에이전트 행동 가이드가 포함됩니다.
 
 ---
 

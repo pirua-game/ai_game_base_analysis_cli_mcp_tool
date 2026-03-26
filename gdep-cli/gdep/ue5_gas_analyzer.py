@@ -69,17 +69,21 @@ class GASClass:
 @dataclass
 class GASAssetRef:
     """A .uasset that references GAS classes."""
-    asset_path:   str
-    asset_name:   str         = ""                            # file stem e.g. "GA_BasicAttack"
-    class_refs:   list[str]   = field(default_factory=list)   # C++ class names found
-    tags:         list[str]   = field(default_factory=list)   # GameplayTag strings found
-    bp_ga_refs:   list[str]   = field(default_factory=list)   # Blueprint GA_ asset names referenced
-    bp_ge_refs:   list[str]   = field(default_factory=list)   # Blueprint GE_ asset names referenced
-    bp_as_refs:   list[str]   = field(default_factory=list)   # Blueprint AS_ asset names referenced
-    has_ga:       bool        = False
-    has_ge:       bool        = False
-    has_as:       bool        = False
-    has_abp:      bool        = False
+    asset_path:      str
+    asset_name:      str         = ""                            # file stem e.g. "GA_BasicAttack"
+    asset_role:      str         = "ref"                         # "GA"|"GE"|"AS"|"ABP"|"ref"
+    class_refs:      list[str]   = field(default_factory=list)   # C++ class names found
+    tags:            list[str]   = field(default_factory=list)   # GameplayTag strings found (high + low mixed, high first)
+    tags_high:       list[str]   = field(default_factory=list)   # Known-prefix tags (high confidence)
+    tags_low:        list[str]   = field(default_factory=list)   # Heuristic-only tags (low confidence)
+    tag_confidence:  str         = "none"                        # "high" | "low" | "mixed" | "none"
+    bp_ga_refs:      list[str]   = field(default_factory=list)   # Blueprint GA_ asset names referenced
+    bp_ge_refs:      list[str]   = field(default_factory=list)   # Blueprint GE_ asset names referenced
+    bp_as_refs:      list[str]   = field(default_factory=list)   # Blueprint AS_ asset names referenced
+    has_ga:          bool        = False
+    has_ge:          bool        = False
+    has_as:          bool        = False
+    has_abp:         bool        = False
 
 
 @dataclass
@@ -91,16 +95,38 @@ class GASReport:
     asc_classes:  list[str]       = field(default_factory=list)
     all_tags:     set[str]        = field(default_factory=set)
     asset_refs:   list[GASAssetRef] = field(default_factory=list)
+    meta:         object          = field(default=None)   # AnalysisMetadata (lazy import)
 
 
 # ── C++ Source Scanner ────────────────────────────────────────
 
 def _is_likely_tag(s: str) -> bool:
-    """Heuristic: GameplayTag strings are dot-separated, e.g. 'Ability.Attack.Melee'."""
+    """Heuristic: GameplayTag strings are dot-separated, e.g. 'Ability.Attack.Melee'.
+
+    강화된 필터:
+    - 단일 문자 세그먼트 거부
+    - GUID/해시 세그먼트 거부 (e.g. BA8A81, 54FD...)
+    - 특수문자 포함 세그먼트 거부
+    """
     parts = s.split(".")
-    return (len(parts) >= 2 and
-            all(p[0].isupper() or p[0].isalpha() for p in parts) and
-            len(s) < 80)
+    if len(parts) < 2 or len(s) >= 80:
+        return False
+    for p in parts:
+        if len(p) < 2:                               # 단일 문자 세그먼트 거부
+            return False
+        if _GUID_SEG_PAT.match(p):                   # GUID/해시 세그먼트 거부
+            return False
+        if not re.match(r'^[A-Za-z][A-Za-z0-9_]*$', p):  # 특수문자 거부
+            return False
+    return True
+
+
+def _tag_confidence(s: str) -> str:
+    """Known prefix면 'high', 아니면 'low'."""
+    for prefix in _KNOWN_TAG_PREFIXES:
+        if s.startswith(prefix):
+            return "high"
+    return "low"
 
 
 def _scan_cpp_file(h_path: Path) -> GASClass | None:
@@ -148,19 +174,37 @@ def _scan_cpp_file(h_path: Path) -> GASClass | None:
 
 # ── Asset Binary Scanner ──────────────────────────────────────
 
+# _scan_uasset sentinel returns
+_SKIP_LFS = "lfs"   # Git LFS stub — binary content unavailable
+_SKIP_ERR = "err"   # File read error
+
 _KNOWN_TAG_PREFIXES = (
     "Ability.", "Effect.", "Attribute.", "Status.", "Event.",
     "Gameplay.", "Tag.", "GAS.", "Input.", "GameplayCue.",
 )
 _IGNORE_DIRS = {"__ExternalActors__", "__ExternalObjects__", "Collections"}
 
+# GUID/해시 세그먼트 거부 패턴 (예: BA8A81, 54FD 등)
+_GUID_SEG_PAT = re.compile(r'^[0-9A-Fa-f]{6,}$')
 
-def _scan_uasset(asset_path: Path, module_name: str) -> GASAssetRef | None:
-    """Scan a single .uasset for GAS references."""
+
+def _scan_uasset(asset_path: Path, module_name: str):
+    """Scan a single .uasset for GAS references.
+
+    Returns:
+      GASAssetRef  — GAS-relevant asset found
+      None         — successfully read, no GAS content
+      _SKIP_LFS    — Git LFS stub (binary content unavailable)
+      _SKIP_ERR    — file read error
+    """
     try:
         data = asset_path.read_bytes()
     except Exception:
-        return None
+        return _SKIP_ERR
+
+    # Git LFS stub: small text file beginning with LFS version header
+    if len(data) < 300 and data.lstrip().startswith(b'version https://git-lfs'):
+        return _SKIP_LFS
 
     has_ga  = bool(_GA_BIN_PAT.search(data))
     has_ge  = bool(_GE_BIN_PAT.search(data))
@@ -170,9 +214,25 @@ def _scan_uasset(asset_path: Path, module_name: str) -> GASAssetRef | None:
     if not (has_ga or has_ge or has_as or has_abp):
         return None
 
+    # Determine asset role: IS-A (에셋 자체가 GAS 타입) vs ref (다른 에셋을 참조)
+    # Supports both GA_* and BP_GA_* naming conventions
+    stem = asset_path.stem
+    _s = stem.upper()
+    if _s.startswith("GA_") or _s.startswith("BP_GA_"):
+        _role = "GA"
+    elif _s.startswith("GE_") or _s.startswith("BP_GE_"):
+        _role = "GE"
+    elif _s.startswith("AS_") or _s.startswith("BP_AS_"):
+        _role = "AS"
+    elif _s.startswith("ABP_"):
+        _role = "ABP"
+    else:
+        _role = "ref"
+
     ref = GASAssetRef(
         asset_path=str(asset_path),
-        asset_name=asset_path.stem,
+        asset_name=stem,
+        asset_role=_role,
         has_ga=has_ga, has_ge=has_ge, has_as=has_as, has_abp=has_abp
     )
 
@@ -202,13 +262,32 @@ def _scan_uasset(asset_path: Path, module_name: str) -> GASAssetRef | None:
     ref.bp_ge_refs = list(set(ref.bp_ge_refs))
     ref.bp_as_refs = list(set(ref.bp_as_refs))
 
-    # Extract likely GameplayTag strings
+    # Extract likely GameplayTag strings — high/low 신뢰도 분리 수집
+    _seen_high: set[str] = set()
+    _seen_low:  set[str] = set()
     for m in _TAG_STRING_PAT.finditer(data):
         s = m.group(1).decode("ascii", errors="ignore")
-        if _is_likely_tag(s):
-            ref.tags.append(s)
+        if not _is_likely_tag(s):
+            continue
+        if _tag_confidence(s) == "high":
+            _seen_high.add(s)
+        else:
+            _seen_low.add(s)
 
-    ref.tags = list(set(ref.tags))[:30]  # dedup + cap
+    # high 최대 25개, low 최대 5개 (노이즈 억제)
+    ref.tags_high = sorted(_seen_high)[:25]
+    ref.tags_low  = sorted(_seen_low)[:5]
+    ref.tags      = ref.tags_high + ref.tags_low   # high 우선 병합
+
+    if ref.tags_high and ref.tags_low:
+        ref.tag_confidence = "mixed"
+    elif ref.tags_high:
+        ref.tag_confidence = "high"
+    elif ref.tags_low:
+        ref.tag_confidence = "low"
+    else:
+        ref.tag_confidence = "none"
+
     return ref
 
 
@@ -247,9 +326,21 @@ def _detect_module(project_path: str) -> str:
 def _build_gas_report_raw(project_path: str,
                            class_name: str | None = None) -> GASReport:
     """Full scan — no cache. Called by analyze_gas and _cached_gas_report."""
+    from .confidence import AnalysisMetadata, ConfidenceTier
+    from .detector import _read_unreal_version
+
     source_root, content_root = _find_source_root(project_path)
     module_name = _detect_module(project_path)
     report = GASReport(project_path=project_path)
+
+    meta = AnalysisMetadata(
+        source_method="cpp_source_regex + binary_pattern_match",
+        confidence=ConfidenceTier.MEDIUM,
+    )
+    ue_ver = _read_unreal_version(Path(project_path).resolve())
+    if ue_ver:
+        meta.ue_version = ue_ver
+    report.meta = meta
 
     from .ue5_blueprint_refs import collect_content_roots
     all_content_roots = collect_content_roots(project_path)
@@ -296,26 +387,97 @@ def _build_gas_report_raw(project_path: str,
             for fname in files:
                 if not fname.endswith((".uasset", ".umap")):
                     continue
-                asset_ref = _scan_uasset(Path(root) / fname, module_name)
-                if asset_ref:
-                    report.asset_refs.append(asset_ref)
-                    report.all_tags.update(asset_ref.tags)
+                meta.scanned += 1
+                result = _scan_uasset(Path(root) / fname, module_name)
+                if result is _SKIP_LFS:
+                    meta.skipped_lfs += 1
+                elif result is _SKIP_ERR:
+                    meta.skipped_error += 1
+                else:
+                    meta.parsed += 1
+                    if result is not None:
+                        report.asset_refs.append(result)
+                        report.all_tags.update(result.tags)
 
+    _resolve_asset_roles(report)
     return report
+
+
+def _resolve_asset_roles(report: GASReport) -> None:
+    """C++ 스캔 결과와 .uasset class_refs를 교차 검증하여 IS-A 역할을 결정한다.
+
+    우선순위:
+      1. Cross-reference: class_refs에 알려진 GAS C++ 클래스가 있으면 → 해당 role
+      2. Fallback: _scan_uasset에서 설정한 명명 규칙 기반 role 유지
+
+    한계:
+      - C++ 중간 클래스 없이 순수 Blueprint로만 만든 GAS 에셋은
+        명명 규칙 fallback에 의존 (cross-ref 불가)
+
+    TODO: UE Editor 통합 확장 계획
+      - 에디터 실행 중이거나 설치 경로(UE.exe)에 접근 가능한 경우
+        에디터 Python API(unreal.EditorAssetLibrary 등)로 완전한 SuperClass 파싱 수행
+      - 그 경우 본 함수 대신 에디터 쿼리 결과를 사용하도록 교체 예정
+    """
+    # C++ 스캔 결과로 역할 lookup 테이블 구성 (U 접두사 유무 모두 등록)
+    role_lookup: dict[str, str] = {}
+    for ga in report.abilities:
+        role_lookup[ga.name] = "GA"
+        if ga.name.startswith("U"):
+            role_lookup[ga.name[1:]] = "GA"
+    for ge in report.effects:
+        role_lookup[ge.name] = "GE"
+        if ge.name.startswith("U"):
+            role_lookup[ge.name[1:]] = "GE"
+    for aset in report.attr_sets:
+        role_lookup[aset.name] = "AS"
+        if aset.name.startswith("U"):
+            role_lookup[aset.name[1:]] = "AS"
+
+    for ref in report.asset_refs:
+        for cls in ref.class_refs:
+            if cls in role_lookup:
+                ref.asset_role = role_lookup[cls]
+                break
 
 
 def _gas_report_to_dict(r: GASReport) -> dict:
     import dataclasses
+    # meta는 dataclasses.asdict에서 제외 후 별도 직렬화
+    meta_obj = r.meta
+    r.meta = None
     d = dataclasses.asdict(r)
+    r.meta = meta_obj
     d["all_tags"] = list(r.all_tags)   # set → list for JSON
+    if meta_obj is not None:
+        import dataclasses as _dc
+        dm = _dc.asdict(meta_obj)
+        dm["confidence"] = meta_obj.confidence.value  # Enum → str
+        d["meta"] = dm
     return d
 
 
 def _gas_report_from_dict(d: dict) -> GASReport:
+    from .confidence import AnalysisMetadata, ConfidenceTier
     def _cls(x): return GASClass(**{k: v for k, v in x.items()
                                     if k in GASClass.__dataclass_fields__})
     def _ref(x): return GASAssetRef(**{k: v for k, v in x.items()
                                        if k in GASAssetRef.__dataclass_fields__})
+    meta = None
+    if "meta" in d and d["meta"]:
+        try:
+            md = d["meta"]
+            meta = AnalysisMetadata(
+                source_method=md.get("source_method", ""),
+                confidence=ConfidenceTier(md.get("confidence", "none")),
+                scanned=md.get("scanned", 0),
+                parsed=md.get("parsed", 0),
+                skipped_lfs=md.get("skipped_lfs", 0),
+                skipped_error=md.get("skipped_error", 0),
+                ue_version=md.get("ue_version", ""),
+            )
+        except Exception:
+            pass
     return GASReport(
         project_path=d["project_path"],
         abilities=[_cls(x) for x in d.get("abilities", [])],
@@ -324,6 +486,7 @@ def _gas_report_from_dict(d: dict) -> GASReport:
         asc_classes=d.get("asc_classes", []),
         all_tags=set(d.get("all_tags", [])),
         asset_refs=[_ref(x) for x in d.get("asset_refs", [])],
+        meta=meta,
     )
 
 
@@ -400,17 +563,33 @@ def analyze_gas(project_path: str,
 
 def _format_gas_summary(r: GASReport) -> str:
     """Return a compact summary with tag distribution only. ~500 tokens."""
+    # Asset role breakdown
+    _role_counts: dict[str, int] = {}
+    for _ar in r.asset_refs:
+        _role_counts[_ar.asset_role] = _role_counts.get(_ar.asset_role, 0) + 1
+
     lines = [
         "# GAS Analysis — Summary",
         f"Project: {r.project_path}",
         "",
+    ]
+    if r.meta:
+        lines += [r.meta.to_header(), ""]
+    lines += [
         "## Counts",
-        f"- GameplayAbilities:              {len(r.abilities)}",
-        f"- GameplayEffects:                {len(r.effects)}",
-        f"- AttributeSets:                  {len(r.attr_sets)}",
+        f"- GameplayAbilities (C++):         {len(r.abilities)}",
+        f"- GameplayEffects (C++):           {len(r.effects)}",
+        f"- AttributeSets (C++):             {len(r.attr_sets)}",
         f"- Classes with ASC:               {len(r.asc_classes)}",
         f"- GameplayTags (in assets):        {len(r.all_tags)}",
         f"- GAS-related .uassets:           {len(r.asset_refs)}",
+        "",
+        "## Asset Roles",
+        f"  IS-A GA  (GA_*):  {_role_counts.get('GA', 0)}",
+        f"  IS-A GE  (GE_*):  {_role_counts.get('GE', 0)}",
+        f"  IS-A AS  (AS_*):  {_role_counts.get('AS', 0)}",
+        f"  IS-A ABP (ABP_*): {_role_counts.get('ABP', 0)}",
+        f"  References only:  {_role_counts.get('ref', 0)}",
         "",
     ]
 
@@ -517,7 +696,8 @@ def _format_gas_filtered(r: GASReport,
     if q and filtered_assets:
         lines.append(f"\n## Matching Assets ({len(filtered_assets)})")
         for ref in filtered_assets[:20]:
-            lines.append(f"  - {ref.asset_name}")
+            _badge = f"[{ref.asset_role}]" if ref.asset_role != "ref" else "[ref]"
+            lines.append(f"  - {ref.asset_name}  {_badge}")
 
     if not matched_tags and not filtered_abilities and not (q and filtered_effects):
         lines.append("No matches found. Try a broader filter or detail_level=\"full\".")
@@ -526,10 +706,18 @@ def _format_gas_filtered(r: GASReport,
 
 
 def _format_gas_report(r: GASReport) -> str:
+    _role_counts: dict[str, int] = {}
+    for _ar in r.asset_refs:
+        _role_counts[_ar.asset_role] = _role_counts.get(_ar.asset_role, 0) + 1
+
     lines = [
         "# GAS (Gameplay Ability System) Analysis",
         f"Project: {r.project_path}",
         "",
+    ]
+    if r.meta:
+        lines += [r.meta.to_header(), ""]
+    lines += [
         "## Summary",
         f"- Abilities (UGameplayAbility subclasses):  {len(r.abilities)}",
         f"- Effects  (UGameplayEffect subclasses):    {len(r.effects)}",
@@ -537,6 +725,9 @@ def _format_gas_report(r: GASReport) -> str:
         f"- Classes using AbilitySystemComponent:     {len(r.asc_classes)}",
         f"- GameplayTags found in assets:             {len(r.all_tags)}",
         f"- GAS-related .uassets:                     {len(r.asset_refs)}",
+        f"    IS-A GA={_role_counts.get('GA',0)}  GE={_role_counts.get('GE',0)}"
+        f"  AS={_role_counts.get('AS',0)}  ABP={_role_counts.get('ABP',0)}"
+        f"  ref={_role_counts.get('ref',0)}",
         "",
     ]
 
@@ -588,12 +779,23 @@ def build_gas_report(project_path: str) -> GASReport:
     GASReport 객체를 직접 반환 (시각화/JSON API용).
     프로젝트 Source + Plugin Source / Content 전체 스캔.
     """
+    from .confidence import AnalysisMetadata, ConfidenceTier
+    from .detector import _read_unreal_version
     import os as _os
 
     from .ue5_blueprint_refs import collect_content_roots
     source_root, _ = _find_source_root(project_path)
     module_name = _detect_module(project_path)
     report = GASReport(project_path=project_path)
+
+    meta = AnalysisMetadata(
+        source_method="cpp_source_regex + binary_pattern_match",
+        confidence=ConfidenceTier.MEDIUM,
+    )
+    ue_ver = _read_unreal_version(Path(project_path).resolve())
+    if ue_ver:
+        meta.ue_version = ue_ver
+    report.meta = meta
 
     # ── Source 스캔 (프로젝트 + 플러그인) ────────────────────
     src_roots = []
@@ -633,9 +835,17 @@ def build_gas_report(project_path: str) -> GASReport:
             for fname in files:
                 if not fname.endswith((".uasset", ".umap")):
                     continue
-                asset_ref = _scan_uasset(Path(root) / fname, module_name)
-                if asset_ref:
-                    report.asset_refs.append(asset_ref)
-                    report.all_tags.update(asset_ref.tags)
+                meta.scanned += 1
+                result = _scan_uasset(Path(root) / fname, module_name)
+                if result is _SKIP_LFS:
+                    meta.skipped_lfs += 1
+                elif result is _SKIP_ERR:
+                    meta.skipped_error += 1
+                else:
+                    meta.parsed += 1
+                    if result is not None:
+                        report.asset_refs.append(result)
+                        report.all_tags.update(result.tags)
 
+    _resolve_asset_roles(report)
     return report

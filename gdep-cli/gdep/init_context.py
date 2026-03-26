@@ -34,16 +34,23 @@ This project uses **gdep MCP** for codebase analysis.
 gdep is a static analyser that understands game engine internals:
 prefab bindings, Blueprint↔C++ bridges, GAS flows, Animator state machines, etc.
 
-### Non-negotiable rules for every AI assistant working on this project
+### Rules for every AI assistant working on this project
 
-1. **NEVER read raw source files to answer structural questions.**
-   gdep already parsed everything. Use its tools — they are faster and more accurate.
+1. **Start structural questions with gdep tools** — they are cached, fast, and understand
+   game-engine semantics (Blueprint↔C++ bridges, GAS flows, Animator state machines).
+   Always call `get_project_context` first in a new session.
 
-2. **ALWAYS call `get_project_context` first** when starting a new session
-   or when you are unsure what the project structure looks like.
+2. **Check the Confidence level in every gdep response before acting on it:**
+   - **HIGH** (C++ / Roslyn source parsing) — trust without additional verification
+   - **MEDIUM** (binary pattern match + cross-reference) — reliable for most queries;
+     cross-check source files before architecture-level decisions
+   - **LOW** (filename heuristics, LFS stubs > 50%) — treat as an index only;
+     always read the relevant source files before making changes
 
-3. **Use the trigger→tool mapping below** to pick the right tool automatically.
-   Do not ask the user which tool to use — infer it from their words.
+3. **Read source files directly when:**
+   - gdep confidence is MEDIUM or LOW *and* the decision is architectural
+   - gdep results conflict with what you see in source code
+   - You are about to perform a structural change (refactor, rename, delete)
 
 4. **All tools accept `project_path` as first argument.**
    The correct path for this project is in the "Project Info" section below.
@@ -256,16 +263,36 @@ def _append_scan_snapshot(lines: list[str], profile, src_path: str) -> None:
 
 
 def _append_ue5_context(lines: list[str], src_path: str) -> None:
-    """UE5 전용: GAS / BT / StateTree 요약."""
+    """UE5 전용: GAS / BT / StateTree 요약 (confidence 정보 포함)."""
     try:
-        from .ue5_gas_analyzer import analyze_gas
-        gas = analyze_gas(src_path)
-        gas_lines = [l for l in gas.splitlines()
-                     if any(l.startswith(p) for p in
-                            ("- Abilities", "- Effects", "- AttributeSets", "- GameplayTags"))]
-        if gas_lines:
+        from .ue5_gas_analyzer import _cached_gas_report
+        report = _cached_gas_report(src_path)
+        # Asset role counts
+        ga_count  = sum(1 for r in report.asset_refs if r.asset_role == "GA")
+        ge_count  = sum(1 for r in report.asset_refs if r.asset_role == "GE")
+        as_count  = sum(1 for r in report.asset_refs if r.asset_role == "AS")
+        abp_count = sum(1 for r in report.asset_refs if r.asset_role == "ABP")
+        ref_count = sum(1 for r in report.asset_refs if r.asset_role == "ref")
+
+        count_lines = [
+            f"- Abilities (C++): {len(report.abilities)}",
+            f"- Effects (C++): {len(report.effects)}",
+            f"- AttributeSets: {len(report.attr_sets)}",
+            f"- GameplayTags (in assets): {len(report.all_tags)}",
+            f"- GAS .uassets — IS-A: GA {ga_count} / GE {ge_count} / AS {as_count} / ABP {abp_count}"
+            f"  |  Referencers: {ref_count}",
+        ]
+        if count_lines:
             lines += ["## GAS Summary", ""]
-            lines += gas_lines
+            lines += count_lines
+            if report.meta:
+                lines.append(f"- Analysis confidence: **{report.meta.confidence.value.upper()}**"
+                             f" ({report.meta.source_method})")
+                lines.append(f"- Coverage: {report.meta.parsed}/{report.meta.scanned} assets"
+                             f" ({report.meta.coverage_pct}%)")
+                if report.meta.skipped_lfs:
+                    lines.append(f"- ⚠ Git LFS stubs skipped: {report.meta.skipped_lfs}"
+                                 f" — results may be incomplete")
             lines.append("")
     except Exception:
         pass

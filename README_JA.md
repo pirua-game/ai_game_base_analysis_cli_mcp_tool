@@ -86,11 +86,21 @@ gdep MCP:   直接依存 2 件 · 間接 200 件以上の UI クラス · アセ
 | `find_unity_event_bindings` | Inspector 連結メソッド（コード検索不可領域） |
 | `analyze_unity_animator` | Animator ステートマシン構造 |
 | `analyze_axmol_events` | Axmol EventDispatcher/Scheduler バインディングマップ |
-| `analyze_ue5_gas` | GAS Ability / Effect / Tag / ASC 全体 |
+| `analyze_ue5_gas` | GAS Ability / Effect / Tag / ASC 全体 — **信頼度ヘッダー** + IS-Aアセット役割分類を含む |
 | `analyze_ue5_behavior_tree` | BehaviorTree アセット構造 |
 | `analyze_ue5_state_tree` | StateTree アセット構造 |
 | `analyze_ue5_animation` | ABP 状態 + Montage + GAS Notify |
-| `analyze_ue5_blueprint_mapping` | C++ クラス → Blueprint 実装マッピング |
+| `analyze_ue5_blueprint_mapping` | C++ クラス → Blueprint 実装マッピング — **信頼度ヘッダー**を含む |
+
+### UE5 信頼度透明化
+
+`analyze_ue5_gas` と `analyze_ue5_blueprint_mapping` はすべての応答の先頭に信頼度ヘッダーを出力します：
+
+```
+> Confidence: **MEDIUM** | Coverage: 4633/4633 (100.0%) | UE version: 5.6 (validated)
+```
+
+`gdep init` が生成する `.gdep/AGENTS.md` は、AI エージェントに信頼ティア別の行動ガイドを提供します。
 
 > 詳細設定 → [gdep-cli/gdep_mcp/README_JA.md](./gdep-cli/gdep_mcp/README_JA.md)
 

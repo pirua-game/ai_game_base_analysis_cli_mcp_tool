@@ -87,11 +87,24 @@ With gdep:     Direct deps: 2 · Indirect: 200+ UI classes · Asset: prefabs/UI/
 | `find_unity_event_bindings` | Inspector-wired methods (invisible in code search) |
 | `analyze_unity_animator` | Animator state machine structure |
 | `analyze_axmol_events` | Axmol EventDispatcher/Scheduler binding map |
-| `analyze_ue5_gas` | GAS Abilities / Effects / Tags / ASC |
+| `analyze_ue5_gas` | GAS Abilities / Effects / Tags / ASC — with **confidence header** + IS-A asset role breakdown |
 | `analyze_ue5_behavior_tree` | BehaviorTree asset structure |
 | `analyze_ue5_state_tree` | StateTree asset structure |
 | `analyze_ue5_animation` | ABP states + Montage + GAS Notifies |
-| `analyze_ue5_blueprint_mapping` | C++ class → Blueprint impl mapping |
+| `analyze_ue5_blueprint_mapping` | C++ class → Blueprint impl mapping — with **confidence header** |
+
+### UE5 Confidence Transparency
+
+Every `analyze_ue5_gas` and `analyze_ue5_blueprint_mapping` response starts with:
+
+```
+> Analysis method: cpp_source_regex + binary_pattern_match
+> Confidence: **MEDIUM**
+> Coverage: 4633/4633 assets parsed (100.0%)
+> UE version: 5.6 (validated)
+```
+
+`gdep init` generates a `.gdep/AGENTS.md` that tells AI agents exactly when to trust gdep results (HIGH = trust fully, MEDIUM = reliable, LOW = verify source) and when to read source files directly.
 
 > Full MCP setup → [gdep-cli/gdep_mcp/README.md](./gdep-cli/gdep_mcp/README.md)
 

@@ -129,11 +129,11 @@ Claude Desktop config (`claude_desktop_config.json`):
 | `execute_gdep_cli` | Raw access to all CLI features |
 | `find_unity_event_bindings` | Unity Inspector event bindings |
 | `analyze_unity_animator` | Unity Animator state machine |
-| `analyze_ue5_gas` | UE5 GAS system full analysis |
+| `analyze_ue5_gas` | UE5 GAS system full analysis — confidence header + IS-A asset role breakdown |
 | `analyze_ue5_behavior_tree` | UE5 BehaviorTree structure |
 | `analyze_ue5_state_tree` | UE5 StateTree structure |
 | `analyze_ue5_animation` | UE5 ABP + Montage analysis |
-| `analyze_ue5_blueprint_mapping` | C++ class → Blueprint impl mapping |
+| `analyze_ue5_blueprint_mapping` | C++ class → Blueprint impl mapping — confidence header |
 
 ---
 

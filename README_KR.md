@@ -87,11 +87,24 @@ gdep MCP:   직접 의존 2개 · 간접 200개 이상 UI 클래스 · 에셋: p
 | `find_unity_event_bindings` | Inspector 연결 메서드 (코드 검색 불가 영역) |
 | `analyze_unity_animator` | Animator 상태머신 구조 |
 | `analyze_axmol_events` | Axmol EventDispatcher/Scheduler 바인딩 맵 |
-| `analyze_ue5_gas` | GAS Ability / Effect / Tag / ASC 전체 |
+| `analyze_ue5_gas` | GAS Ability / Effect / Tag / ASC 전체 — **신뢰도 헤더** + IS-A 에셋 역할 구분 포함 |
 | `analyze_ue5_behavior_tree` | BehaviorTree 에셋 구조 |
 | `analyze_ue5_state_tree` | StateTree 에셋 구조 |
 | `analyze_ue5_animation` | ABP 상태 + Montage + GAS Notify |
-| `analyze_ue5_blueprint_mapping` | C++ 클래스 → Blueprint 구현체 매핑 |
+| `analyze_ue5_blueprint_mapping` | C++ 클래스 → Blueprint 구현체 매핑 — **신뢰도 헤더** 포함 |
+
+### UE5 신뢰도 투명화
+
+`analyze_ue5_gas`와 `analyze_ue5_blueprint_mapping`은 모든 응답 상단에 신뢰도 헤더를 출력합니다:
+
+```
+> Analysis method: cpp_source_regex + binary_pattern_match
+> Confidence: **MEDIUM**
+> Coverage: 4633/4633 assets parsed (100.0%)
+> UE version: 5.6 (validated)
+```
+
+`gdep init`으로 생성된 `.gdep/AGENTS.md`는 AI 에이전트에게 신뢰 등급별 행동 가이드를 제공합니다 (HIGH=신뢰, MEDIUM=신뢰 가능, LOW=소스 확인).
 
 > 상세 설정 → [gdep-cli/gdep_mcp/README_KR.md](./gdep-cli/gdep_mcp/README_KR.md)
 
