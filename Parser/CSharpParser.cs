@@ -284,7 +284,11 @@ public class CSharpParser
         if (baseList == null) return;
         foreach (var t in baseList.Types)
         {
-            var name = CleanTypeName(t.Type.ToString());
+            // Use raw type name for inheritance — never filter base types through Primitives,
+            // because engine base classes (MonoBehaviour, ScriptableObject, etc.) must be preserved.
+            var raw = t.Type.ToString();
+            var name = raw.Split('<')[0].Trim();
+            if (name.Contains('.')) name = name.Split('.').Last();
             if (string.IsNullOrEmpty(name)) continue;
             node.BaseTypes.Add(name);
             edges.Add(new ParsedEdge(name, EdgeKind.Inheritance, ""));

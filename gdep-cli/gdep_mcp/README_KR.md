@@ -99,7 +99,7 @@ pip install gdep "mcp[cli]"
 
 | 도구 | 설명 |
 |------|------|
-| `analyze_ue5_gas` | GA/GE/AS 클래스 + GameplayTag + ASC 사용처. **신뢰도 헤더** (분석 방법/신뢰 등급/커버리지/UE 버전) + IS-A 에셋 역할 구분 (GA/GE/AS/ABP vs 참조만) 포함. 태그 노이즈 필터링 (GUID 세그먼트 제거) 적용. |
+| `analyze_ue5_gas` | GA/GE/AS 클래스 + GameplayTag + ASC 사용처. **신뢰도 헤더** (분석 방법/신뢰 등급/커버리지/UE 버전) + IS-A 에셋 역할 구분 (GA/GE/AS/ABP vs 참조만) 포함. 태그 노이즈 필터링 (GUID 세그먼트 제거) 적용. `enum class` 오탐 수정. |
 | `analyze_ue5_behavior_tree` | BT_* .uasset → Task/Decorator/Service/Blackboard |
 | `analyze_ue5_state_tree` | ST_* .uasset → Task/AIController 연결 |
 | `analyze_ue5_animation` | ABP 상태머신 + Montage 섹션/슬롯/GAS Notify |

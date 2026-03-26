@@ -74,7 +74,7 @@ export default function WatchPanel() {
 
   // 상태
   const [watching,     setWatching]     = useState(false)
-  const [engine,       setEngine]       = useState('')
+  const [engine,       setEngine]       = useState(''); void engine
   const [statusMsg,    setStatusMsg]    = useState('')
   const [results,      setResults]      = useState<AnalysisResult[]>([])
   const [expanded,     setExpanded]     = useState<Set<number>>(new Set())

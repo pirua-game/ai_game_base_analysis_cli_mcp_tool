@@ -24,8 +24,25 @@ _GA_BASE_PAT   = re.compile(r'class' + _API_OPT + r'\s+\w+\s*:\s*(?:public\s+)?U
 _GE_BASE_PAT   = re.compile(r'class' + _API_OPT + r'\s+\w+\s*:\s*(?:public\s+)?UGameplayEffect\b')
 _AS_BASE_PAT   = re.compile(r'class' + _API_OPT + r'\s+\w+\s*:\s*(?:public\s+)?(?:UAttributeSet|FGameplayAttributeData)\b')
 _ASC_USE_PAT   = re.compile(r'UAbilitySystemComponent\b')
+_ENUM_CLS_PAT  = re.compile(r'\benum\s+class\s+(\w+)')
 _TAG_DECL_PAT  = re.compile(r'FGameplayTag(?:Container)?\s+(\w+)')
 _TAG_MACRO_PAT = re.compile(r'GAMEPLAYTAG_DECLARE_TAG\s*\(\s*(\w+(?:\.\w+)*)\s*\)')
+# C++ runtime tag literals: RequestGameplayTag(TEXT("State.Attacking")) etc.
+_REQUEST_TAG_PAT = re.compile(
+    r'RequestGameplayTag\s*\(\s*(?:(?:TEXT|FName)\s*\(\s*)?["\']([A-Za-z][A-Za-z0-9.]*)["\']'
+)
+
+# Any class declaration: captures (child, parent) for transitive inheritance resolution
+_CLS_DECL_PAT = re.compile(
+    r'class\s+(?:\w+_API\s+)?(\w+)\s*:\s*(?:public\s+)?(\w+)'
+)
+
+# GAS root classes → kind string (used in 2-pass scan)
+_GAS_ROOT_KIND: dict[str, str] = {
+    "UGameplayAbility": "Ability",
+    "UGameplayEffect":  "Effect",
+    "UAttributeSet":    "AttributeSet",
+}
 
 # UPROPERTY holding GAS types — `class` 키워드 optional 처리
 _UPROP_GA_PAT  = re.compile(
@@ -93,7 +110,8 @@ class GASReport:
     effects:      list[GASClass]  = field(default_factory=list)
     attr_sets:    list[GASClass]  = field(default_factory=list)
     asc_classes:  list[str]       = field(default_factory=list)
-    all_tags:     set[str]        = field(default_factory=set)
+    all_tags:     set[str]        = field(default_factory=set)   # high-confidence only
+    all_tags_low: set[str]        = field(default_factory=set)   # low-confidence (noise-prone)
     asset_refs:   list[GASAssetRef] = field(default_factory=list)
     meta:         object          = field(default=None)   # AnalysisMetadata (lazy import)
 
@@ -104,17 +122,24 @@ def _is_likely_tag(s: str) -> bool:
     """Heuristic: GameplayTag strings are dot-separated, e.g. 'Ability.Attack.Melee'.
 
     강화된 필터:
-    - 단일 문자 세그먼트 거부
+    - 최소 3자 세그먼트 (2자 이하 거부: Nk, jO, HS, aK 등)
     - GUID/해시 세그먼트 거부 (e.g. BA8A81, 54FD...)
+    - 숫자 비율 30% 초과 거부 (W16q = 50% digits)
+    - 세그먼트 첫 글자 대문자 필수 (UE GameplayTag CamelCase 컨벤션)
     - 특수문자 포함 세그먼트 거부
     """
     parts = s.split(".")
     if len(parts) < 2 or len(s) >= 80:
         return False
     for p in parts:
-        if len(p) < 2:                               # 단일 문자 세그먼트 거부
+        if len(p) < 3:                               # 2자 이하 세그먼트 거부
             return False
         if _GUID_SEG_PAT.match(p):                   # GUID/해시 세그먼트 거부
+            return False
+        digit_count = sum(1 for c in p if c.isdigit())
+        if digit_count / len(p) > 0.30:             # 숫자 비율 30% 초과 거부
+            return False
+        if not p[0].isupper():                       # 첫 글자 대문자 필수
             return False
         if not re.match(r'^[A-Za-z][A-Za-z0-9_]*$', p):  # 특수문자 거부
             return False
@@ -129,28 +154,71 @@ def _tag_confidence(s: str) -> str:
     return "low"
 
 
-def _scan_cpp_file(h_path: Path) -> GASClass | None:
-    """Scan a single .h file for GAS class declarations."""
+def _scan_cpp_for_request_tags(source_path: Path) -> set[str]:
+    """Scan .cpp and .h files for RequestGameplayTag(TEXT("...")) string literals."""
+    found: set[str] = set()
+    for f in source_path.rglob("*.[ch]pp"):
+        if any(p in _IGNORE_DIRS for p in f.parts):
+            continue
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        for m in _REQUEST_TAG_PAT.finditer(text):
+            tag = m.group(1)
+            if _is_likely_tag(tag):
+                found.add(tag)
+    return found
+
+
+def _scan_cpp_file(h_path: Path,
+                   forced_kind: str | None = None,
+                   forced_name: str | None = None) -> GASClass | None:
+    """Scan a single .h file for GAS class declarations.
+
+    forced_kind / forced_name: used in Pass 2 for indirect subclasses whose
+    GAS kind was resolved via ancestor-walking rather than direct pattern match.
+    """
     try:
         text = h_path.read_text(encoding="utf-8", errors="replace")
     except Exception:
         return None
 
-    kind: str | None = None
-    if _GA_BASE_PAT.search(text):  kind = "Ability"
-    elif _GE_BASE_PAT.search(text): kind = "Effect"
-    elif _AS_BASE_PAT.search(text): kind = "AttributeSet"
-    elif _ASC_USE_PAT.search(text): kind = "Component"
+    _kind_match = None
+    if forced_kind is not None:
+        kind = forced_kind
+    else:
+        kind = None
+        ga_m = _GA_BASE_PAT.search(text)
+        ge_m = _GE_BASE_PAT.search(text)
+        as_m = _AS_BASE_PAT.search(text)
+        if ga_m:
+            kind = "Ability";     _kind_match = ga_m
+        elif ge_m:
+            kind = "Effect";      _kind_match = ge_m
+        elif as_m:
+            kind = "AttributeSet"; _kind_match = as_m
+        elif _ASC_USE_PAT.search(text):
+            kind = "Component"
 
     if kind is None:
         return None
 
-    # Extract class name — handle optional MODULE_API macro
-    # Patterns: "class MYMODULE_API UMyClass : public" or "class UMyClass : public"
-    cls_m = re.search(r'\bclass\s+(?:\w+_API\s+)?(\w+)\s*:', text)
-    if not cls_m:
-        return None
-    class_name = cls_m.group(1)
+    if forced_name is not None:
+        class_name = forced_name
+    else:
+        # Extract class name from the GAS-matching line to avoid misidentifying
+        # the first class in the file (e.g. an enum class declared above the GAS class).
+        search_text = _kind_match.group(0) if _kind_match else text
+        enum_names = {m.group(1) for m in _ENUM_CLS_PAT.finditer(text)}
+        cls_m = None
+        for m in re.finditer(r'\bclass\s+(?:\w+_API\s+)?(\w+)\s*:', search_text):
+            if m.group(1) not in enum_names:
+                cls_m = m
+                break
+        if not cls_m:
+            return None
+        class_name = cls_m.group(1)
 
     gas = GASClass(name=class_name, kind=kind, source_file=str(h_path))
     gas.asc_used = bool(_ASC_USE_PAT.search(text))
@@ -361,13 +429,30 @@ def _build_gas_report_raw(project_path: str,
                     source_roots.append((sub / "Source",
                                          f"Plugin/{plugin_dir.name}/{sub.name}"))
 
+    # Pass 1: direct GAS detection + build parent_map/file_map for transitive lookup
+    parent_map: dict[str, str]              = {}   # child → direct parent class name
+    file_map:   dict[str, tuple[Path, str]] = {}   # child → (h_path, src_label)
+    detected_names: set[str]                = set()
+
     for src_path, src_label in source_roots:
         for h_file in src_path.rglob("*.h"):
+            # Build parent_map and file_map from ALL class declarations in this file
+            try:
+                h_text = h_file.read_text(encoding="utf-8", errors="replace")
+                for m in _CLS_DECL_PAT.finditer(h_text):
+                    child, parent = m.group(1), m.group(2)
+                    parent_map[child] = parent
+                    file_map[child]   = (h_file, src_label)
+            except Exception:
+                pass
+
+            # Direct GAS scan (unchanged)
             gas_cls = _scan_cpp_file(h_file)
             if gas_cls is None:
                 continue
             if class_name and gas_cls.name.lower() != class_name.lower():
                 continue
+            detected_names.add(gas_cls.name)
             gas_cls.source_file = f"[{src_label}] {gas_cls.source_file}"
             if gas_cls.kind == "Ability":
                 report.abilities.append(gas_cls)
@@ -377,6 +462,41 @@ def _build_gas_report_raw(project_path: str,
                 report.attr_sets.append(gas_cls)
             elif gas_cls.kind == "Component" and gas_cls.name not in report.asc_classes:
                 report.asc_classes.append(gas_cls.name)
+
+        # Scan .cpp files for RequestGameplayTag(TEXT("...")) literals
+        report.all_tags.update(_scan_cpp_for_request_tags(src_path))
+
+    # Pass 2: transitive inheritance — find indirect GAS subclasses missed by Pass 1
+    def _resolve_gas_kind(child: str, depth: int = 0) -> str | None:
+        """Walk parent_map ancestors until a GAS root is found (or depth exceeded)."""
+        if depth > 20:
+            return None
+        parent = parent_map.get(child)
+        if parent is None:
+            return None
+        if parent in _GAS_ROOT_KIND:
+            return _GAS_ROOT_KIND[parent]
+        return _resolve_gas_kind(parent, depth + 1)
+
+    for child_name, (h_file, src_label) in file_map.items():
+        if child_name in detected_names:
+            continue
+        kind = _resolve_gas_kind(child_name)
+        if kind is None:
+            continue
+        if class_name and child_name.lower() != class_name.lower():
+            continue
+        gas_cls = _scan_cpp_file(h_file, forced_kind=kind, forced_name=child_name)
+        if gas_cls is None:
+            continue
+        detected_names.add(child_name)
+        gas_cls.source_file = f"[{src_label}] {gas_cls.source_file}"
+        if gas_cls.kind == "Ability":
+            report.abilities.append(gas_cls)
+        elif gas_cls.kind == "Effect":
+            report.effects.append(gas_cls)
+        elif gas_cls.kind == "AttributeSet":
+            report.attr_sets.append(gas_cls)
 
     import os as _os
     for content_dir, _lbl in all_content_roots:
@@ -397,7 +517,15 @@ def _build_gas_report_raw(project_path: str,
                     meta.parsed += 1
                     if result is not None:
                         report.asset_refs.append(result)
-                        report.all_tags.update(result.tags)
+                        report.all_tags.update(result.tags_high)
+                        report.all_tags_low.update(result.tags_low)
+
+    # Improvement 2: C++ 소스에서 클래스를 찾은 경우 HIGH 신뢰도로 상향
+    if report.abilities or report.effects or report.attr_sets:
+        meta.confidence = ConfidenceTier.HIGH
+        meta.source_method = "cpp_source_regex"
+        if meta.parsed > 0:
+            meta.source_method += " + binary_pattern_match"
 
     _resolve_asset_roles(report)
     return report
@@ -448,7 +576,8 @@ def _gas_report_to_dict(r: GASReport) -> dict:
     r.meta = None
     d = dataclasses.asdict(r)
     r.meta = meta_obj
-    d["all_tags"] = list(r.all_tags)   # set → list for JSON
+    d["all_tags"]     = list(r.all_tags)      # set → list for JSON
+    d["all_tags_low"] = list(r.all_tags_low)  # set → list for JSON
     if meta_obj is not None:
         import dataclasses as _dc
         dm = _dc.asdict(meta_obj)
@@ -485,6 +614,7 @@ def _gas_report_from_dict(d: dict) -> GASReport:
         attr_sets=[_cls(x) for x in d.get("attr_sets", [])],
         asc_classes=d.get("asc_classes", []),
         all_tags=set(d.get("all_tags", [])),
+        all_tags_low=set(d.get("all_tags_low", [])),
         asset_refs=[_ref(x) for x in d.get("asset_refs", [])],
         meta=meta,
     )
@@ -845,7 +975,8 @@ def build_gas_report(project_path: str) -> GASReport:
                     meta.parsed += 1
                     if result is not None:
                         report.asset_refs.append(result)
-                        report.all_tags.update(result.tags)
+                        report.all_tags.update(result.tags_high)
+                        report.all_tags_low.update(result.tags_low)
 
     _resolve_asset_roles(report)
     return report

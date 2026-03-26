@@ -140,6 +140,7 @@ class ProjectBlueprintMap:
     module_name:  str
     blueprints:   dict[str, BlueprintMapping]       = field(default_factory=dict)
     cpp_to_bps:   dict[str, list[BlueprintMapping]] = field(default_factory=dict)
+    hierarchy:    dict[str, list[str]]              = field(default_factory=dict) # base -> [descendants]
     meta:         object                            = field(default=None)  # AnalysisMetadata
 
 # ---------------------------------------------------------------------------
@@ -543,6 +544,9 @@ def _bp_map_from_dict(d: dict) -> ProjectBlueprintMap:
     cpp_dict: dict[str, list[BlueprintMapping]] = {}
     for cpp_cls, lst in d.get("cpp_to_bps", {}).items():
         cpp_dict[cpp_cls] = [_bp(x) for x in lst]
+    
+    hierarchy = d.get("hierarchy", {})
+
     meta = None
     if "meta" in d and d["meta"]:
         try:
@@ -563,8 +567,50 @@ def _bp_map_from_dict(d: dict) -> ProjectBlueprintMap:
         module_name=d["module_name"],
         blueprints=bps_dict,
         cpp_to_bps=cpp_dict,
+        hierarchy=hierarchy,
         meta=meta,
     )
+
+
+def _build_cpp_hierarchy(source_path: str) -> dict[str, list[str]]:
+    """Scan Source directory for class inheritance and return transitive closure."""
+    hierarchy: dict[str, set[str]] = {}
+    
+    # regex for: class [API] UChild : public UParent
+    pattern = re.compile(r'(?:class|struct)\s+(?:[A-Z0-9_]+_API\s+)?([AUF][A-Za-z0-9_]+)\s*:\s*public\s+([AUF][A-Za-z0-9_]+)')
+
+    root_path = Path(source_path)
+    # If source_path is project root, find Source/
+    source_dir = root_path / "Source" if (root_path / "Source").exists() else root_path
+
+    if source_dir.exists():
+        for root, _, files in os.walk(source_dir):
+            for f in files:
+                if f.endswith('.h'):
+                    try:
+                        content = Path(root, f).read_text(encoding='utf-8', errors='ignore')
+                        matches = pattern.findall(content)
+                        if matches:
+                            for child, parent in matches:
+                                hierarchy.setdefault(parent, set()).add(child)
+                    except Exception:
+                        continue
+    # Transitive closure: base -> all descendants
+    full: dict[str, set[str]] = {}
+    def get_all(cls, visited):
+        if cls in visited: return set()
+        visited.add(cls)
+        res = set()
+        for child in hierarchy.get(cls, []):
+            res.add(child)
+            res.update(get_all(child, visited))
+        return res
+
+    for parent in hierarchy:
+        full[parent] = get_all(parent, set())
+
+    # Convert sets to sorted lists for JSON serialization
+    return {k: sorted(list(v)) for k, v in full.items()}
 
 
 def _build_bp_map_raw(source_path: str, progress_cb=None) -> ProjectBlueprintMap:
@@ -606,6 +652,9 @@ def _build_bp_map_raw(source_path: str, progress_cb=None) -> ProjectBlueprintMap
         module_name=module_name,
         meta=meta,
     )
+
+    # C++ hierarchy scan
+    bp_map.hierarchy = _build_cpp_hierarchy(source_path)
 
     # Collect .uasset files (skip .umap — maps rarely define BPs)
     asset_files: list[Path] = []
@@ -771,20 +820,82 @@ def format_cpp_to_bps(cpp_class: str, bps: list[BlueprintMapping]) -> str:
 def format_full_project_map(bp_map: ProjectBlueprintMap,
                              cpp_class: str | None = None) -> str:
     if cpp_class:
-        candidates = [cpp_class]
+        # Canonical names for the base class (with and without prefixes)
+        bases = {cpp_class}
         for prefix in ('A', 'U', 'F', 'I', 'E'):
             if cpp_class.startswith(prefix):
-                candidates.append(cpp_class[1:])
+                bases.add(cpp_class[1:])
             else:
-                candidates.append(prefix + cpp_class)
-        bps: list[BlueprintMapping] = []
-        seen: set[str] = set()
-        for c in candidates:
+                bases.add(prefix + cpp_class)
+        
+        # Collect all descendants from hierarchy
+        descendants: set[str] = set()
+        for b in bases:
+            descendants.add(b)
+            if b in bp_map.hierarchy:
+                descendants.update(bp_map.hierarchy[b])
+        
+        # All candidate names including prefixed versions of descendants
+        all_candidates: set[str] = set()
+        for d in descendants:
+            all_candidates.add(d)
+            for prefix in ('A', 'U', 'F', 'I', 'E'):
+                if d.startswith(prefix):
+                    all_candidates.add(d[1:])
+                else:
+                    all_candidates.add(prefix + d)
+        
+        # Group Blueprints by their immediate C++ parent
+        bps_by_parent: dict[str, list[BlueprintMapping]] = {}
+        seen_bp: set[str] = set()
+        
+        for c in all_candidates:
             for m in bp_map.cpp_to_bps.get(c, []):
-                if m.bp_class not in seen:
-                    seen.add(m.bp_class)
-                    bps.append(m)
-        return format_cpp_to_bps(cpp_class, bps)
+                if m.bp_class not in seen_bp:
+                    seen_bp.add(m.bp_class)
+                    bps_by_parent.setdefault(m.cpp_parent, []).append(m)
+
+    if cpp_class:
+        if not bps_by_parent:
+            return f"No Blueprint implementations found for `{cpp_class}` (including descendants)."
+
+        lines = [f"# Blueprints inheriting from `{cpp_class}`\n"]
+        if bp_map.meta:
+            lines.insert(0, bp_map.meta.to_header() + "\n")
+        
+        # Sort parents: direct implementations first, then by name
+        sorted_parents = sorted(bps_by_parent.keys(), 
+                                key=lambda p: (p not in bases, p))
+        
+        for parent in sorted_parents:
+            bps = bps_by_parent[parent]
+            is_direct = parent in bases
+            label = "Direct implementations" if is_direct else f"via `{parent}`"
+            lines.append(f"## {label} ({len(bps)})\n")
+            for m in bps:
+                overrides = ", ".join(f"`{k}`" for k in m.k2_overrides) or "(none)"
+                lines.append(f"### `{m.asset_name}` ({m.bp_class})")
+                lines.append(f"  Path: {m.asset_path}")
+                lines.append(f"  K2 overrides: {overrides}")
+                if m.event_nodes:
+                    for ev in m.event_nodes:
+                        chain_str = ""
+                        if ev.call_chain:
+                            chain_str = " -> " + " -> ".join(ev.call_chain[:5])
+                            if len(ev.call_chain) > 5:
+                                chain_str += f" (+{len(ev.call_chain)-5})"
+                        lines.append(f"  Event `{ev.name}`{chain_str}")
+                if m.variables:
+                    typed = [v for v in m.variables if v.type_hint]
+                    if typed:
+                        lines.append("  Variables: " +
+                                     ", ".join(f"`{v.name}[{v.type_hint}]`"
+                                               for v in typed[:5]))
+                if m.gameplay_tags:
+                    lines.append(f"  Tags: {', '.join(m.gameplay_tags[:4])}")
+                lines.append("")
+        
+        return "\n".join(lines)
 
     lines = [
         f"# Blueprint <-> C++ Map  [{bp_map.module_name}]",
@@ -799,7 +910,12 @@ def format_full_project_map(bp_map: ProjectBlueprintMap,
     for cpp_cls, bps in sorted(bp_map.cpp_to_bps.items()):
         # Only show prefixed canonical names (skip bare duplicates)
         if any(cpp_cls == b.cpp_parent for b in bps):
-            names = ", ".join(f"`{b.asset_name}`" for b in bps[:5])
+            def _bp_summary(b) -> str:
+                k2 = len(b.k2_overrides)
+                ev = len([e for e in b.event_nodes if not e.name.startswith("K2_")])
+                detail = f" (K2:{k2} Ev:{ev})" if k2 or ev else ""
+                return f"`{b.asset_name}`{detail}"
+            names = ", ".join(_bp_summary(b) for b in bps[:5])
             extra = f" +{len(bps)-5} more" if len(bps) > 5 else ""
             lines.append(f"- `{cpp_cls}` -> {names}{extra}")
     return "\n".join(lines)

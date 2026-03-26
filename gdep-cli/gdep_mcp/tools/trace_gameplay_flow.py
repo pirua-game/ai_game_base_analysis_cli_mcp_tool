@@ -15,6 +15,7 @@ if str(_GDEP_ROOT) not in sys.path:
     sys.path.insert(0, str(_GDEP_ROOT))
 
 from gdep import runner
+from gdep.confidence import ConfidenceTier, confidence_footer
 from gdep.detector import detect
 
 
@@ -65,7 +66,9 @@ def run(project_path: str, class_name: str, method_name: str,
                     sections.append("  > Blueprint bridge active: C++ flow continues into Blueprint implementation")
 
                 # Format as readable tree text
-                sections.append(_render_flow_tree(nodes, edges, class_name, method_name))
+                # Use entryClass from JSON (may differ from input if class name was normalized)
+                actual_class = data.get("entryClass", class_name)
+                sections.append(_render_flow_tree(nodes, edges, actual_class, method_name))
 
                 dispatches = data.get("dispatches", [])
                 if dispatches:
@@ -89,7 +92,7 @@ def run(project_path: str, class_name: str, method_name: str,
             else:
                 sections.append(f"Source not available: {src_result.error_message}")
 
-        return "\n".join(sections)
+        return "\n".join(sections) + confidence_footer(ConfidenceTier.HIGH, "source-level call graph")
 
     except Exception as e:
         return f"[trace_gameplay_flow] Error: {e}"
@@ -100,9 +103,10 @@ def _render_flow_tree(nodes: list, edges: list, root_class: str, root_method: st
     if not nodes:
         return "  (No call nodes found — method may be empty or not parsed)"
 
-    # Build adjacency map and condition map
+    # Build adjacency map, condition map, and multiplicity map
     children: dict[str, list[str]] = {n["id"]: [] for n in nodes}
-    condition_map: dict[tuple[str, str], str] = {}
+    condition_map:    dict[tuple[str, str], str] = {}
+    multiplicity_map: dict[tuple[str, str], int] = {}
     for e in edges:
         frm, to = e.get("from", ""), e.get("to", "")
         if frm in children:
@@ -110,6 +114,9 @@ def _render_flow_tree(nodes: list, edges: list, root_class: str, root_method: st
         cond = e.get("condition", "")
         if cond:
             condition_map[(frm, to)] = cond
+        mult = e.get("multiplicity", 1)
+        if mult > 1:
+            multiplicity_map[(frm, to)] = mult
 
     node_map = {n["id"]: n for n in nodes}
     entry_id = f"{root_class}.{root_method}"
@@ -133,6 +140,9 @@ def _render_flow_tree(nodes: list, edges: list, root_class: str, root_method: st
         cls     = node.get("class", "")
         display = f"{cls}.{label}" if cls and cls != root_class else label
         cond = condition_map.get((parent_id, nid), "")
+        mult = multiplicity_map.get((parent_id, nid), 1)
+        if mult > 1:
+            flags += f" x{mult}"
         if cond:
             flags += f" ({cond})"
         lines.append(f"{prefix}{connector}{display}{flags}")

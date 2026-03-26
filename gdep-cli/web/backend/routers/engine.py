@@ -26,8 +26,10 @@ class UnityEventsRequest(BaseModel):
 def unity_events(req: UnityEventsRequest):
     try:
         from gdep.unity_event_refs import build_event_map, format_event_result
+        from gdep.confidence import ConfidenceTier, confidence_footer
         event_map = build_event_map(req.path)
         result = format_event_result(event_map, req.method_name)
+        result += confidence_footer(ConfidenceTier.HIGH, "UnityEvent source regex")
         return {"result": result}
     except Exception as e:
         return {"result": f"Error: {e}"}
@@ -63,6 +65,8 @@ def unity_animator(req: UnityAnimatorRequest):
                     break
 
         result = analyze_animator(search_path, req.controller_name)
+        from gdep.confidence import ConfidenceTier, confidence_footer
+        result += confidence_footer(ConfidenceTier.HIGH, ".controller YAML source parse")
         return {"result": result}
     except Exception as e:
         return {"result": f"Error: {e}"}
@@ -71,15 +75,18 @@ def unity_animator(req: UnityAnimatorRequest):
 # ── UE5 GAS ──────────────────────────────────────────────────
 
 class UE5GasRequest(BaseModel):
-    path:       str
-    class_name: Optional[str] = None
+    path:         str
+    class_name:   Optional[str] = None
+    detail_level: str           = "summary"
+    category:     Optional[str] = None
+    query:        Optional[str] = None
 
 
 @router.post("/ue5/gas")
 def ue5_gas(req: UE5GasRequest):
     try:
         from gdep.ue5_gas_analyzer import analyze_gas
-        result = analyze_gas(req.path, req.class_name)
+        result = analyze_gas(req.path, req.class_name, req.detail_level, req.category, req.query)
         return {"result": result}
     except Exception as e:
         return {"result": f"Error: {e}"}

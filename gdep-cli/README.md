@@ -81,7 +81,7 @@ gdep init {path}
 |---------|---------|-------------|
 | `detect` | Auto-detect engine type | Before first analysis |
 | `scan` | Coupling · Cycles · Dead code | Understand structure, before refactor |
-| `describe` | Class detail + Blueprint impl + AI summary | Unfamiliar class, code review |
+| `describe` | Class detail + **full inheritance chain** + Blueprint impl + AI summary | Unfamiliar class, code review |
 | `flow` | Method call chain trace (C++→BP boundary) | Bug tracing, flow analysis |
 | `impact` | Change impact reverse-trace | Safety check before refactoring |
 | `lint` | Game-specific anti-pattern scan | Quality check before PR |

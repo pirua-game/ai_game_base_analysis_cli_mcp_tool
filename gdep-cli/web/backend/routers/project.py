@@ -243,22 +243,6 @@ class DescribeRequest(BaseModel):
     class_name: str
 
 
-@router.post("/describe")
-def describe(req: DescribeRequest):
-    profile = _get_profile(req.path)
-
-    if _is_ue5(profile):
-        from gdep.ue5_runner import describe as ue5_describe
-        src = str(profile.source_dirs[0]) if profile.source_dirs else req.path
-        result = ue5_describe(src, req.class_name)
-    else:
-        result = runner.describe(profile, req.class_name)
-
-    if not result.ok:
-        raise HTTPException(status_code=500, detail=result.error_message)
-    return {"stdout": result.stdout}
-
-
 class ReadSourceRequest(BaseModel):
     path:       str
     class_name: str
@@ -363,3 +347,188 @@ def diff_summary(req: DiffSummaryRequest):
     from gdep_mcp.tools.summarize_project_diff import run as _diff_run
     report = _diff_run(req.path, commit_ref=req.commit)
     return {"report": report}
+
+
+# ── describe 구조화 파서 ──────────────────────────────────────
+
+def _parse_describe_output(stdout: str, class_name: str) -> dict:
+    """
+    describe 출력에서 inheritance_chain, kind, file_path 등 구조화된 필드를 추출.
+    stdout 필드도 유지해 기존 프론트엔드 하위호환 보장.
+    """
+    inheritance_chain: list[str] = []
+    also_implements: list[str] = []
+    kind = ""
+    file_path = ""
+
+    for line in stdout.splitlines():
+        s = line.strip()
+        # UE5/C++ 포맷: "  Inheritance chain: A → B → C"
+        if s.startswith("Inheritance chain:"):
+            raw = s[len("Inheritance chain:"):].strip()
+            inheritance_chain = [p.strip() for p in raw.split("→") if p.strip()]
+        # Unity C# 포맷: "  chain: A → B → C"
+        elif s.startswith("chain:"):
+            raw = s[len("chain:"):].strip()
+            inheritance_chain = [p.strip() for p in raw.split("→") if p.strip()]
+        # 단일 상속: "  Inheritance: Parent" 또는 "  : Parent"
+        elif s.startswith("Inheritance:"):
+            raw = s[len("Inheritance:"):].strip()
+            if raw:
+                inheritance_chain = [class_name, raw]
+        elif re.match(r"^:\s+\S", s):
+            raw = s[1:].strip()
+            if raw:
+                inheritance_chain = [class_name, raw]
+        # also implements
+        elif s.startswith("Also implements:") or s.startswith("also:"):
+            key = "Also implements:" if "Also implements:" in s else "also:"
+            raw = s[len(key):].strip()
+            also_implements = [p.strip() for p in raw.split(",") if p.strip()]
+        # Kind 줄 (예: "Class  UIBase")
+        elif s.lower().startswith("class ") or s.lower().startswith("struct "):
+            parts = s.split(None, 1)
+            if len(parts) >= 1:
+                kind = parts[0]
+        # 파일 경로
+        elif s.startswith("File:") or s.startswith("Source:"):
+            file_path = s.split(":", 1)[1].strip()
+
+    return {
+        "class_name":        class_name,
+        "kind":              kind,
+        "file_path":         file_path,
+        "inheritance_chain": inheritance_chain,
+        "also_implements":   also_implements,
+        "stdout":            stdout,
+    }
+
+
+# 기존 describe 엔드포인트를 구조화된 응답으로 업그레이드
+@router.post("/describe")
+def describe(req: DescribeRequest):
+    profile = _get_profile(req.path)
+
+    if _is_ue5(profile):
+        from gdep.ue5_runner import describe as ue5_describe
+        src = str(profile.source_dirs[0]) if profile.source_dirs else req.path
+        result = ue5_describe(src, req.class_name)
+    else:
+        result = runner.describe(profile, req.class_name)
+
+    if not result.ok:
+        raise HTTPException(status_code=500, detail=result.error_message)
+    return _parse_describe_output(result.stdout, req.class_name)
+
+
+# ── Phase 1-2: explain_method_logic ──────────────────────────
+
+class ExplainMethodLogicRequest(BaseModel):
+    path:        str
+    class_name:  str
+    method_name: str
+
+
+@router.post("/explain-method-logic")
+def explain_method_logic(req: ExplainMethodLogicRequest):
+    try:
+        from gdep_mcp.tools.explain_method_logic import run, _parse_control_flow
+        from gdep_mcp.tools.explain_method_logic import (
+            _extract_cs_method, _extract_cpp_method
+        )
+
+        raw_text = run(req.path, req.class_name, req.method_name)
+
+        # 구조화: "1. Guard    : ..." / "2. Branch   : ..." 줄 파싱
+        # run()이 번호를 붙여 출력하므로 "N. " 접두사를 먼저 제거
+        items = []
+        source_file = ""
+        confidence = ""
+        _num_prefix = re.compile(r'^\d+\.\s+')
+        for line in raw_text.splitlines():
+            s = line.strip()
+            # "N. Kind : ..." 형식의 번호 접두사 제거
+            s_bare = _num_prefix.sub('', s)
+            for kind in ("Guard", "Branch", "Loop", "Switch", "Exception", "Always"):
+                if s_bare.startswith(kind):
+                    rest = s_bare[len(kind):].lstrip(": ").strip()
+                    items.append({"type": kind.lower(), "text": rest})
+                    break
+            if s.startswith("Source:"):
+                source_file = s[len("Source:"):].strip()
+            # confidence_footer 포맷: "> Confidence: **HIGH** (note)"
+            if "Confidence:" in s:
+                confidence = s
+
+        return {
+            "raw":         raw_text,
+            "items":       items,
+            "source_file": source_file,
+            "confidence":  confidence,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Phase 1-3: get_project_context ───────────────────────────
+
+@router.get("/context")
+def get_project_context(path: str = Query(...)):
+    try:
+        from gdep.init_context import build_context_output
+        context = build_context_output(path)
+        agents_md = Path(path) / ".gdep" / "AGENTS.md"
+        # project root 탐색 (최대 3단계 상위)
+        p = Path(path)
+        for _ in range(4):
+            candidate = p / ".gdep" / "AGENTS.md"
+            if candidate.exists():
+                agents_md = candidate
+                break
+            p = p.parent
+        return {
+            "context":       context,
+            "has_agents_md": agents_md.exists(),
+            "agents_md_path": str(agents_md) if agents_md.exists() else "",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Phase 1-4: gdep init ─────────────────────────────────────
+
+class InitRequest(BaseModel):
+    path:  str
+    force: bool = False
+
+
+@router.post("/init")
+def init_project(req: InitRequest):
+    try:
+        from gdep.init_context import build_context_output
+        from gdep.detector import detect as _detect
+        import json as _json
+
+        profile = _detect(req.path)
+        root = profile.root
+
+        agents_dir = root / ".gdep"
+        agents_dir.mkdir(parents=True, exist_ok=True)
+        agents_md = agents_dir / "AGENTS.md"
+
+        if agents_md.exists() and not req.force:
+            return {
+                "success":       False,
+                "agents_md_path": str(agents_md),
+                "message":       "AGENTS.md already exists. Use force=true to overwrite.",
+            }
+
+        content = build_context_output(req.path)
+        agents_md.write_text(content, encoding="utf-8")
+        return {
+            "success":        True,
+            "agents_md_path": str(agents_md),
+            "message":        f"AGENTS.md created at {agents_md}",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

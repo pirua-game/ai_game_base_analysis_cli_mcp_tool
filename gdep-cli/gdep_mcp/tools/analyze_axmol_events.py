@@ -13,6 +13,7 @@ if str(_GDEP_ROOT) not in sys.path:
     sys.path.insert(0, str(_GDEP_ROOT))
 
 from gdep.axmol_event_refs import build_event_map, format_event_result
+from gdep.confidence import ConfidenceTier, confidence_footer
 
 
 def run(project_path: str, class_name: str | None = None) -> str:
@@ -41,6 +42,6 @@ def run(project_path: str, class_name: str | None = None) -> str:
     """
     try:
         event_map = build_event_map(project_path)
-        return format_event_result(event_map, class_name)
+        return format_event_result(event_map, class_name) + confidence_footer(ConfidenceTier.HIGH, "source regex")
     except Exception as e:
         return f"[analyze_axmol_events] Error: {e}"

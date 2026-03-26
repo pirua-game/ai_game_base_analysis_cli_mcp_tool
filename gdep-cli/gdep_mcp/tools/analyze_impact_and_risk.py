@@ -16,6 +16,7 @@ if str(_GDEP_ROOT) not in sys.path:
     sys.path.insert(0, str(_GDEP_ROOT))
 
 from gdep import runner
+from gdep.confidence import ConfidenceTier, confidence_footer
 from gdep.detector import detect
 
 
@@ -115,7 +116,7 @@ def run(project_path: str, class_name: str,
         else:
             sections.append(f"Lint failed: {lint_result.error_message}")
 
-        return "\n".join(sections)
+        return "\n".join(sections) + confidence_footer(ConfidenceTier.HIGH, "reverse dependency graph")
 
     except Exception as e:
         return f"[analyze_impact_and_risk] Error: {e}"

@@ -47,19 +47,58 @@ export interface LLMConfig {
 
 // ── API 함수 ──────────────────────────────────────────────────
 
+// Phase 1-5: describe 구조화 응답 타입
+export interface DescribeResult {
+  class_name:        string
+  kind:              string
+  file_path:         string
+  inheritance_chain: string[]
+  also_implements:   string[]
+  stdout:            string   // 하위호환용 raw text
+}
+
+// Phase 1-2: explain_method_logic 타입
+export interface ControlFlowItem { type: string; text: string }
+export interface ExplainMethodResult {
+  raw:         string
+  items:       ControlFlowItem[]
+  source_file: string
+  confidence:  string
+}
+
+// Phase 1-3: project context 타입
+export interface ProjectContextResult {
+  context:        string
+  has_agents_md:  boolean
+  agents_md_path: string
+}
+
+// Phase 1-4: init 타입
+export interface InitResult {
+  success:        boolean
+  agents_md_path: string
+  message:        string
+}
+
 export const projectApi = {
   detect:     (path: string) =>
     api.get<ProjectInfo>('/project/detect', { params: { path } }).then(r => r.data),
   scan:       (path: string, top = 20, circular = true, dead_code = false, deep = false, include_refs = false) =>
     api.post<ScanResult>('/project/scan', { path, top, circular, dead_code, deep, include_refs }).then(r => r.data),
   describe:   (path: string, class_name: string) =>
-    api.post<{ stdout: string }>('/project/describe', { path, class_name }).then(r => r.data),
+    api.post<DescribeResult>('/project/describe', { path, class_name }).then(r => r.data),
   readSource: (path: string, class_name: string, max_chars = 8000) =>
     api.post<{ content: string }>('/project/read_source', { path, class_name, max_chars }).then(r => r.data),
   impact:     (path: string, target_class: string, depth = 3) =>
     api.post<ImpactResult>('/project/impact', { path, target_class, depth }).then(r => r.data),
   lint:       (path: string) =>
     api.post<LintResult>('/project/lint', { path }).then(r => r.data),
+  explainMethodLogic: (path: string, class_name: string, method_name: string) =>
+    api.post<ExplainMethodResult>('/project/explain-method-logic', { path, class_name, method_name }).then(r => r.data),
+  getContext: (path: string) =>
+    api.get<ProjectContextResult>('/project/context', { params: { path } }).then(r => r.data),
+  init:       (path: string, force = false) =>
+    api.post<InitResult>('/project/init', { path, force }).then(r => r.data),
 }
 
 export const classesApi = {
@@ -173,10 +212,12 @@ export const engineApi = {
     api.post<{ result: string }>('/engine/unity/animator', { path, controller_name: controller_name ?? null })
        .then(r => r.data.result),
 
-  // UE5 GAS
-  ue5Gas: (path: string, class_name?: string) =>
-    api.post<{ result: string }>('/engine/ue5/gas', { path, class_name: class_name ?? null })
-       .then(r => r.data.result),
+  // UE5 GAS (detail_level/category/query 지원)
+  ue5Gas: (path: string, class_name?: string, detail_level = 'summary', category?: string, query?: string) =>
+    api.post<{ result: string }>('/engine/ue5/gas', {
+      path, class_name: class_name ?? null,
+      detail_level, category: category ?? null, query: query ?? null,
+    }).then(r => r.data.result),
 
   // UE5 GAS 연결 그래프 (ReactFlow용)
   ue5GasGraph: (path: string) =>
@@ -240,9 +281,11 @@ export const engineAnalysisApi = {
   unityAnimator: (path: string, controller_name?: string) =>
     api.post<{ result: string }>('/engine/unity/animator', { path, controller_name }).then(r => r.data),
 
-  // UE5 GAS
-  ue5Gas: (path: string, class_name?: string) =>
-    api.post<{ result: string }>('/engine/ue5/gas', { path, class_name }).then(r => r.data),
+  // UE5 GAS (detail_level/category/query 지원)
+  ue5Gas: (path: string, class_name?: string, detail_level = 'summary', category?: string, query?: string) =>
+    api.post<{ result: string }>('/engine/ue5/gas', {
+      path, class_name, detail_level, category, query,
+    }).then(r => r.data),
 
   // UE5 ABP + Montage
   ue5Animation: (path: string, asset_name?: string, asset_type = 'all', detail_level = 'summary') =>

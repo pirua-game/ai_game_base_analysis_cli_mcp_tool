@@ -15,6 +15,7 @@ if str(_GDEP_ROOT) not in sys.path:
     sys.path.insert(0, str(_GDEP_ROOT))
 
 from gdep import runner
+from gdep.confidence import ConfidenceTier, confidence_footer
 from gdep.detector import detect
 
 
@@ -144,7 +145,7 @@ def run(project_path: str, include_dead_code: bool = True,
         else:
             sections.append(f"  Lint not available: {lint_result.error_message}")
 
-        return "\n".join(sections)
+        return "\n".join(sections) + confidence_footer(ConfidenceTier.HIGH, "full scan + lint")
 
     except Exception as e:
         return f"[inspect_architectural_health] Error: {e}"

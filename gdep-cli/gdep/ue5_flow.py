@@ -13,7 +13,7 @@ from pathlib import Path
 _IGNORE_CALLS = {
     "if", "for", "while", "switch", "return", "new", "delete",
     "sizeof", "decltype", "static_assert", "nullptr", "true", "false",
-    "Super", "Cast", "TEXT", "UE_LOG", "check", "ensure", "verify",
+    "Cast", "TEXT", "UE_LOG", "check", "ensure", "verify",
     "checkf", "ensureMsgf", "checkNoEntry",
     "CreateDefaultSubobject", "SetupAttachment",
     "GetSubsystem", "AddMappingContext", "GetLocalPlayer",
@@ -125,6 +125,11 @@ def _masked_body(body):
 # ── Function pointer removal ──────────────────────────────────────────
 _FUNC_PTR_PAT = re.compile(r'&\s*\w+\s*::\s*\w+')
 
+# UE5 delegate binding: AddDynamic(this, &AMyClass::OnHit) → edge to AMyClass.OnHit
+_DELEGATE_BIND_PAT = re.compile(
+    r'(?:AddDynamic|BindUObject|BindDynamic|AddUFunction)\s*\(\s*[^,]+,\s*&([A-Za-z0-9_]+)::([A-Za-z0-9_]+)\s*\)'
+)
+
 # ── Condition keyword extraction ───────────────────────────────────────
 _COND_KEYWORD_PAT = re.compile(r'\b(if|switch|while|for)\s*\(')
 
@@ -173,27 +178,38 @@ def _extract_condition_at(body: str, call_offset: int) -> str:
 # ── Direct call extraction ────────────────────────────────────────────
 _CALL_PAT = re.compile(
     r'(?:'
-    r'(?:(\w+)\s*->\s*(\w+))'
+    r'(?:(\w+)\s*->\s*(\w+))'       # ptr->method    (group 1, 2)
     r'|'
-    r'(?:(\w+)\s*\.\s*(\w+))'
+    r'(?:(\w+)\s*\.\s*(\w+))'       # obj.method     (group 3, 4)
     r'|'
-    r'(\w+)\s*(?=\()'
+    r'(?:(\w+)\s*::\s*(\w+))'       # Class::method  (group 5, 6) — Super::, ClassName::
+    r'|'
+    r'(\w+)\s*(?=\()'                # standalone     (group 7)
     r')\s*\('
 )
 
 def _extract_calls(body):
     clean = _remove_comments(body)
-    clean = _masked_body(clean)
-    clean = _FUNC_PTR_PAT.sub('', clean)
+
+    # 1. Extract delegate bindings before masking
+    delegates = []
+    for cls_name, method in _DELEGATE_BIND_PAT.findall(clean):
+        delegates.append((cls_name, method, "delegate"))
+
+    # 2. Extract normal calls from masked body
+    masked = _masked_body(clean)
+    masked = _FUNC_PTR_PAT.sub('', masked)
 
     calls = []
-    for m in _CALL_PAT.finditer(clean):
+    for m in _CALL_PAT.finditer(masked):
         if m.group(1) and m.group(2):
             obj, method = m.group(1), m.group(2)
         elif m.group(3) and m.group(4):
             obj, method = m.group(3), m.group(4)
-        elif m.group(5):
-            obj, method = "", m.group(5)
+        elif m.group(5) and m.group(6):
+            obj, method = m.group(5), m.group(6)
+        elif m.group(7):
+            obj, method = "", m.group(7)
         else:
             continue
         if method in _IGNORE_CALLS:
@@ -206,7 +222,7 @@ def _extract_calls(body):
             continue
         condition = _extract_condition_at(clean, m.start())
         calls.append((obj, method, condition))
-    return calls
+    return calls + delegates
 
 # ── Nodes / Edges ───────────────────────────────────────────────
 @dataclass
@@ -220,11 +236,12 @@ class FlowNode:
 
 @dataclass
 class FlowEdge:
-    from_id:    str
-    to_id:      str
-    context:    str  = ""
-    is_dynamic: bool = False
-    condition:  str  = ""       # "if: ...", "switch: ...", etc.
+    from_id:      str
+    to_id:        str
+    context:      str  = ""
+    is_dynamic:   bool = False
+    condition:    str  = ""       # "if: ...", "switch: ...", etc.
+    multiplicity: int  = 1        # >1 when same call appears multiple times (e.g. GiveAbility x8)
 
 # ── Source file collection ────────────────────────────────────────────
 _IGNORE_DIRS = {"Binaries","Intermediate","Saved","Build","Content",".vs",".idea"}
@@ -244,11 +261,46 @@ def _find_cpp_files(source_path):
                 result[cls] = str(cpp)
     return result
 
+def _build_parent_map(source_path):
+    """Scan .h files and return {ChildClass: DirectParentClass} for project classes.
+
+    Used to resolve Super::Method() calls to the actual parent class.
+    """
+    result = {}
+    pat = re.compile(
+        r'class\s+(?:[A-Z0-9_]+_API\s+)?([AUF][A-Za-z0-9_]+)\s*:\s*public\s+([AUF][A-Za-z0-9_]+)'
+    )
+    for h in Path(source_path).rglob("*.h"):
+        if any(p in _IGNORE_DIRS for p in h.parts):
+            continue
+        try:
+            text = h.read_text(encoding="utf-8", errors="ignore")
+            for child, parent in pat.findall(text):
+                if child not in result:
+                    result[child] = parent
+        except Exception:
+            continue
+    return result
+
+
 # ── Flow Analysis ─────────────────────────────────────────────────
 def trace_flow(source_path, class_name, method_name,
-               max_depth=3, focus_classes=None):
+               max_depth=5, focus_classes=None):
     cpp_files       = _find_cpp_files(source_path)
     project_classes = set(cpp_files.keys())
+    parent_map      = _build_parent_map(source_path)
+
+    # Loose class name lookup: e.g. "UARFoo" also registers "ARFoo"
+    # so callee_cls without UE prefix (U/A/F) still resolves correctly.
+    _loose_cls: dict = {}
+    for c in project_classes:
+        _loose_cls[c] = c
+        if len(c) > 1 and c[0] in "UAF" and c[1].isupper():
+            _loose_cls.setdefault(c[1:], c)
+
+    # Normalize entry class name (in case caller omitted UE prefix)
+    class_name = _loose_cls.get(class_name, class_name)
+
     nodes           = {}
     edges           = []
     seen_edges      = set()
@@ -361,6 +413,12 @@ def trace_flow(source_path, class_name, method_name,
                 seen_edges.add(ek)
                 edges.append(FlowEdge(from_id=parent_id, to_id=node_id,
                                       condition=condition))
+            else:
+                # Same call repeated: increment multiplicity
+                for e in edges:
+                    if e.from_id == parent_id and e.to_id == node_id:
+                        e.multiplicity += 1
+                        break
         if depth <= 0:
             nodes[node_id].is_leaf = True
             return
@@ -386,10 +444,21 @@ def trace_flow(source_path, class_name, method_name,
             return
         for obj, callee, cond in calls:
             callee_cls = cls
-            if obj and obj not in ("this", "Super", "self"):
-                if obj[0].isupper():
+            if obj and obj not in ("this", "self"):
+                if obj == "Super":
+                    # Resolve Super::Method() to the actual C++ parent class
+                    callee_cls = parent_map.get(cls, cls)
+                elif obj[0].isupper():
                     callee_cls = obj
+
             callee_id = f"{callee_cls}.{callee}"
+
+            # ── UE5 AbilityTask async pattern ────────────────────
+            # CreateXxx/NewAbilityTask on an AbilityTask class → also trace Activate()
+            is_task_creation = callee.startswith("Create") or callee in ("NewAbilityTask", "NewObject")
+            if is_task_creation and "AbilityTask" in callee_cls:
+                visit(callee_cls, "Activate", depth - 1, node_id, cond + " (AbilityTask)")
+
             if focus_classes and callee_cls not in focus_classes and callee_cls != cls:
                 if callee_id not in nodes:
                     nodes[callee_id] = FlowNode(
@@ -401,7 +470,13 @@ def trace_flow(source_path, class_name, method_name,
                     edges.append(FlowEdge(from_id=node_id, to_id=callee_id,
                                           condition=cond))
                 continue
-            should_recurse = callee_cls in project_classes and depth > 1
+            # Normalize callee class for UE prefix variations (ARFoo → UARFoo)
+            resolved = _loose_cls.get(callee_cls)
+            if resolved and resolved != callee_cls:
+                callee_cls = resolved
+                callee_id  = f"{callee_cls}.{callee}"
+
+            should_recurse = callee_cls in project_classes
             visit(callee_cls, callee, depth - 1 if should_recurse else 0, node_id, cond)
             # If this callee is a K2_ method and became a leaf, inject BP chain
             callee_node_id = f"{callee_cls}.{callee}"
@@ -430,16 +505,20 @@ def trace_flow(source_path, class_name, method_name,
 
 
 def flow_to_json(source_path, class_name, method_name,
-                 max_depth=3, focus_classes=None):
+                 max_depth=5, focus_classes=None):
     nodes, edges = trace_flow(
         source_path, class_name, method_name, max_depth, focus_classes
     )
     # Detect if any BP bridge nodes were injected
     has_bp_bridge = any(n.is_dispatch and n.class_name.endswith('_C')
                         for n in nodes)
+    # Use actual entry node (class_name may have been normalized inside trace_flow)
+    entry_node   = next((n for n in nodes if n.is_entry), None)
+    entry_id     = entry_node.id         if entry_node else f"{class_name}.{method_name}"
+    entry_class  = entry_node.class_name if entry_node else class_name
     return {
-        "entry":      f"{class_name}.{method_name}",
-        "entryClass": class_name,
+        "entry":      entry_id,
+        "entryClass": entry_class,
         "depth":      max_depth,
         "bpBridge":   has_bp_bridge,
         "nodes": [
@@ -460,11 +539,12 @@ def flow_to_json(source_path, class_name, method_name,
         ],
         "edges": [
             {
-                "from":      e.from_id,
-                "to":        e.to_id,
-                "context":   e.context,
-                "isDynamic": e.is_dynamic,
-                "condition": e.condition,
+                "from":         e.from_id,
+                "to":           e.to_id,
+                "context":      e.context,
+                "isDynamic":    e.is_dynamic,
+                "condition":    e.condition,
+                "multiplicity": e.multiplicity,
             }
             for e in edges
         ],

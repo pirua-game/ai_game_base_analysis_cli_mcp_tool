@@ -6,7 +6,8 @@ import type { TranslationKey } from '../i18n'
 import {
   classesApi, flowApi, unityApi, projectApi,
   type ClassInfo, type ClassMethod, type ClassField, type PrefabRef,
-  type LintIssue, ue5Api, type BlueprintRef
+  type LintIssue, ue5Api, type BlueprintRef,
+  type ExplainMethodResult, type DescribeResult,
 } from '../api/client'
 
 
@@ -259,6 +260,12 @@ export default function ClassBrowser({ onFlowReady }: Props) {
   const [lintIssues,  setLintIssues]  = useState<LintIssue[]>([])
   const [lintLoading, setLintLoading] = useState(false)
   const [lintOpen,    setLintOpen]    = useState(false)
+  // Describe / inheritance chain (Phase 2-4)
+  const [describeResult,    setDescribeResult]    = useState<DescribeResult | null>(null)
+  // Method Logic (Phase 2-3)
+  const [methodLogic,       setMethodLogic]       = useState<ExplainMethodResult | null>(null)
+  const [methodLogicLoading,setMethodLogicLoading]= useState(false)
+  const [logicMethod,       setLogicMethod]       = useState<string | null>(null)
 
   useEffect(() => {
     if (!selectedClass || !scriptsPath || projectInfo?.kind !== 'UNREAL') {
@@ -279,6 +286,15 @@ export default function ClassBrowser({ onFlowReady }: Props) {
       .catch(() => setBpMapping(''))
       .finally(() => setBpMapLoading(false))
   }, [selectedClass, scriptsPath, projectInfo])
+
+  // describe 결과 (inheritance_chain 포함) — selectedClass 변경 시 갱신
+  useEffect(() => {
+    if (!selectedClass || !scriptsPath) { setDescribeResult(null); return }
+    projectApi.describe(scriptsPath, selectedClass)
+      .then(setDescribeResult)
+      .catch(() => setDescribeResult(null))
+    setMethodLogic(null); setLogicMethod(null)
+  }, [selectedClass, scriptsPath])
 
   // 클래스 목록 캐시
   useEffect(() => {
@@ -510,11 +526,36 @@ export default function ClassBrowser({ onFlowReady }: Props) {
                       {bx.label}
                     </span>
                   </h2>
-                  {cls.bases.length > 0 && (
+                  {/* 상속 체인 breadcrumb (describe 결과 기반) */}
+                  {describeResult && describeResult.inheritance_chain.length > 1 ? (
+                    <div className="flex flex-wrap items-center gap-1 mt-1">
+                      {describeResult.inheritance_chain.map((cls2, i) => (
+                        <span key={cls2} className="flex items-center gap-1">
+                          {i > 0 && <ChevronRight size={12} className="text-gray-600 shrink-0" />}
+                          <button
+                            onClick={() => setSelectedClass(cls2)}
+                            className="text-sm text-purple-400 hover:text-purple-300 hover:underline transition-colors">
+                            {cls2}
+                          </button>
+                        </span>
+                      ))}
+                      {describeResult.also_implements.length > 0 && (
+                        <span className="text-xs text-gray-500 ml-1">
+                          +{describeResult.also_implements.join(', ')}
+                        </span>
+                      )}
+                    </div>
+                  ) : cls.bases.length > 0 ? (
                     <p className="text-sm text-gray-400 mt-0.5">
-                      {t('inheritance')}: {cls.bases.map(b => <span key={b} className="text-purple-400 mr-2">{b}</span>)}
+                      {t('inheritance')}: {cls.bases.map(b => (
+                        <button key={b}
+                          onClick={() => setSelectedClass(b)}
+                          className="text-purple-400 hover:text-purple-300 hover:underline mr-2 transition-colors">
+                          {b}
+                        </button>
+                      ))}
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
@@ -709,6 +750,61 @@ export default function ClassBrowser({ onFlowReady }: Props) {
                       </div>
                     </PrivateToggle>
                   )}
+
+                  {/* Method Logic 빠른 분석 */}
+                  <div className="mt-3">
+                    <p className="text-xs text-gray-500 mb-2 uppercase tracking-wide">Method Logic</p>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {[...lifecycle, ...pubOther].slice(0, 16).map(m => (
+                        <button key={m.name}
+                          onClick={async () => {
+                            setLogicMethod(m.name)
+                            setMethodLogic(null)
+                            setMethodLogicLoading(true)
+                            try {
+                              const res = await projectApi.explainMethodLogic(scriptsPath, selectedClass, m.name)
+                              setMethodLogic(res)
+                            } catch { setMethodLogic(null) }
+                            finally { setMethodLogicLoading(false) }
+                          }}
+                          className={`text-xs px-2 py-1 rounded border transition-colors
+                            ${logicMethod === m.name
+                              ? 'border-violet-500 text-violet-300 bg-violet-950'
+                              : 'border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-300'}`}>
+                          {m.name}
+                        </button>
+                      ))}
+                    </div>
+                    {methodLogicLoading && (
+                      <p className="text-xs text-gray-500 animate-pulse">analyzing {logicMethod}…</p>
+                    )}
+                    {methodLogic && !methodLogicLoading && (
+                      <div className="rounded border border-violet-800 bg-violet-950/30 p-3 space-y-1">
+                        <p className="text-xs font-semibold text-violet-300 mb-1.5">{logicMethod}()</p>
+                        {methodLogic.items.length === 0 ? (
+                          <p className="text-xs text-gray-500">Linear sequence — no branching logic detected.</p>
+                        ) : methodLogic.items.map((item, i) => {
+                          const typeColor: Record<string, string> = {
+                            guard: 'text-red-400', branch: 'text-yellow-400',
+                            loop: 'text-blue-400', switch: 'text-cyan-400',
+                            exception: 'text-orange-400', always: 'text-green-400',
+                          }
+                          const color = typeColor[item.type] ?? 'text-gray-400'
+                          return (
+                            <div key={i} className="flex gap-2 text-xs">
+                              <span className={`shrink-0 w-16 font-mono uppercase ${color}`}>{item.type}</span>
+                              <span className="text-gray-300 truncate" title={item.text}>{item.text}</span>
+                            </div>
+                          )
+                        })}
+                        {methodLogic.source_file && (
+                          <p className="text-xs text-gray-600 mt-1 pt-1 border-t border-violet-800/50">
+                            {methodLogic.source_file}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                 </div>
               </div>

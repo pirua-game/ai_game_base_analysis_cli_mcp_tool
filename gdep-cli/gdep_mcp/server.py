@@ -38,6 +38,7 @@ if str(_GDEP_ROOT) not in sys.path:
     sys.path.insert(0, str(_GDEP_ROOT))
 
 from mcp.server.fastmcp import FastMCP
+from gdep.confidence import ConfidenceTier, confidence_footer
 from gdep_mcp.tools.analyze_impact_and_risk import run as _impact_run
 from gdep_mcp.tools.explore_class_semantics import run as _semantics_run
 from gdep_mcp.tools.inspect_architectural_health import run as _health_run
@@ -155,8 +156,12 @@ def analyze_impact_and_risk(project_path: str, class_name: str,
 
 
 @mcp.tool()
-def trace_gameplay_flow(project_path: str, class_name: str, method_name: str,
-                        depth: int = 4, include_source: bool = True) -> str:
+def trace_gameplay_flow(project_path: str,
+                         class_name: str,
+                         method_name: str,
+                         depth: int = 5,
+                         include_source: bool = True) -> str:
+
     """
     Trace a method's full call chain and show relevant source code.
 
@@ -221,12 +226,13 @@ def explore_class_semantics(project_path: str, class_name: str,
     Returns:
     - Fields, methods, in/out dependencies
     - Unity prefab / UE5 blueprint usages (engine asset back-references)
-    - 3-line AI summary of the class role (cached in .gdep_cache/summaries/)
+    - 3-line AI summary of the class role (when LLM is configured via gdep config llm)
 
     Args:
         project_path: Absolute path to Scripts/Source folder.
         class_name:   Class to explore. E.g. "ManagerBattle", "AHSAttributeSet"
-        summarize:    Prepend AI 3-line summary (requires gdep config llm). Default True.
+        summarize:    Generate AI 3-line summary if LLM is configured (gdep config llm).
+                      If not configured, returns structure only. Default True.
         refresh:      Ignore cache and regenerate summary. Default False.
     """
     return _semantics_run(project_path, class_name, summarize, refresh)
@@ -442,7 +448,7 @@ def find_unity_event_bindings(project_path: str,
     try:
         from gdep.unity_event_refs import build_event_map, format_event_result
         event_map = build_event_map(project_path)
-        return format_event_result(event_map, method_name)
+        return format_event_result(event_map, method_name) + confidence_footer(ConfidenceTier.MEDIUM, "prefab/scene YAML parsing")
     except Exception as e:
         return f"[find_unity_event_bindings] Error: {e}"
 
@@ -469,7 +475,7 @@ def analyze_unity_animator(project_path: str,
         )
     try:
         from gdep.unity_animator import analyze_animator
-        return analyze_animator(project_path, controller_name)
+        return analyze_animator(project_path, controller_name) + confidence_footer(ConfidenceTier.MEDIUM, "animator YAML parsing")
     except Exception as e:
         return f"[analyze_unity_animator] Error: {e}"
 
@@ -552,7 +558,7 @@ def analyze_ue5_behavior_tree(project_path: str,
         )
     try:
         from gdep.ue5_ai_analyzer import analyze_behavior_tree
-        return analyze_behavior_tree(project_path, asset_name)
+        return analyze_behavior_tree(project_path, asset_name) + confidence_footer(ConfidenceTier.MEDIUM, "binary .uasset pattern match")
     except Exception as e:
         return f"[analyze_ue5_behavior_tree] Error: {e}"
 
@@ -577,7 +583,7 @@ def analyze_ue5_state_tree(project_path: str,
         return "ue5_ai_analyzer module not available yet."
     try:
         from gdep.ue5_ai_analyzer import analyze_state_tree
-        return analyze_state_tree(project_path, asset_name)
+        return analyze_state_tree(project_path, asset_name) + confidence_footer(ConfidenceTier.MEDIUM, "binary .uasset pattern match")
     except Exception as e:
         return f"[analyze_ue5_state_tree] Error: {e}"
 
@@ -647,7 +653,8 @@ def analyze_ue5_animation(project_path: str,
             result = analyze_abp(project_path, asset_name) + \
                      "\n\n" + analyze_montage(project_path, asset_name)
 
-        return result if detail_level == "full" else _trim_for_summary(result)
+        output = result if detail_level == "full" else _trim_for_summary(result)
+        return output + confidence_footer(ConfidenceTier.MEDIUM, "binary .uasset pattern match")
     except Exception as e:
         return f"[analyze_ue5_animation] Error: {e}"
 
@@ -679,16 +686,19 @@ def analyze_ue5_blueprint_mapping(project_path: str,
     Args:
         project_path: Absolute path to UE5 Source or project root.
         cpp_class:    Optional C++ class name to filter.
-                      If provided, returns only Blueprints that extend this class.
-                      If None, returns the full project-level summary.
+                      If provided, returns full detail: event_nodes, k2_overrides,
+                      variables, asset_refs, gameplay_tags, gas_params for matching BPs.
+                      If None (default), returns a project-level index showing
+                      "C++ class -> BP1 (K2:N Ev:N), BP2 ..." for quick orientation.
+                      Use cpp_class for deep inspection of a specific class.
 
     Examples:
         analyze_ue5_blueprint_mapping(path)
-            -> Full map: lists every C++ class and its BP implementations
+            -> Index: "UGameplayAbility -> GA_Jump (K2:2 Ev:1), GA_Attack (K2:3 Ev:0)"
         analyze_ue5_blueprint_mapping(path, "AHSCharacterBase")
-            -> Shows all BPs that extend AHSCharacterBase with events + variables
+            -> Full detail: events, K2 overrides, variables, tags for each child BP
         analyze_ue5_blueprint_mapping(path, "UGameplayAbility")
-            -> Shows all GA Blueprints with K2_ActivateAbility chains + tags
+            -> Full detail for all GA Blueprints with K2_ActivateAbility chains + tags
     """
     if not _UE5_BP_MAPPING_AVAILABLE:
         return "ue5_blueprint_mapping module not available."

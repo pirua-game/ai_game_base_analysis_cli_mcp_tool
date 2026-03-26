@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: gdep
-Version: 0.1.14
+Version: 0.1.6
 Summary: Game Engine Dependency & AI Analysis Tool
 License: MIT
 Project-URL: Homepage, https://github.com/pirua-game/gdep
@@ -33,7 +33,7 @@ Supports Unity · Cocos2d-x · Unreal Engine 5 · .NET C# · Generic C++.
 [![PyPI](https://img.shields.io/pypi/v/gdep)](https://pypi.org/project/gdep/)
 
 **[GitHub](https://github.com/pirua-game/gdep)** ·
-**[MCP Setup](https://github.com/pirua-game/gdep/blob/main/gdep-cli/gdep-mcp/README.md)** ·
+**[MCP Setup](https://github.com/pirua-game/gdep/blob/main/gdep-cli/gdep_mcp/README.md)** ·
 **[CI/CD Integration](https://github.com/pirua-game/gdep/blob/main/docs/ci-integration.md)**
 
 **Read this in other languages:**
@@ -154,11 +154,11 @@ Claude Desktop config (`claude_desktop_config.json`):
 | `execute_gdep_cli` | Raw access to all CLI features |
 | `find_unity_event_bindings` | Unity Inspector event bindings |
 | `analyze_unity_animator` | Unity Animator state machine |
-| `analyze_ue5_gas` | UE5 GAS system full analysis |
+| `analyze_ue5_gas` | UE5 GAS system full analysis — confidence header + IS-A asset role breakdown |
 | `analyze_ue5_behavior_tree` | UE5 BehaviorTree structure |
 | `analyze_ue5_state_tree` | UE5 StateTree structure |
 | `analyze_ue5_animation` | UE5 ABP + Montage analysis |
-| `analyze_ue5_blueprint_mapping` | C++ class → Blueprint impl mapping |
+| `analyze_ue5_blueprint_mapping` | C++ class → Blueprint impl mapping — confidence header |
 
 ---
 
@@ -205,6 +205,6 @@ Detection priority: `$GDEP_DLL` env → `publish_dll/gdep.dll` → `publish/gdep
 ## 📚 More
 
 - [Full README & Workflows](https://github.com/pirua-game/gdep)
-- [MCP Server Setup](https://github.com/pirua-game/gdep/blob/main/gdep-cli/gdep-mcp/README.md)
+- [MCP Server Setup](https://github.com/pirua-game/gdep/blob/main/gdep-cli/gdep_mcp/README.md)
 - [CI/CD Integration](https://github.com/pirua-game/gdep/blob/main/docs/ci-integration.md)
 - [Performance Benchmark](https://github.com/pirua-game/gdep/blob/main/docs/BENCHMARK.md)

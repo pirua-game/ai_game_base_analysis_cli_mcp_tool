@@ -130,6 +130,23 @@ def scan(src: str, top: int = 20, circular: bool = True, dead_code: bool = False
 
 # ── describe ─────────────────────────────────────────────────
 
+def _build_ancestor_chain(all_items: dict, class_name: str, max_depth: int = 20) -> list[str]:
+    """Walk primary inheritance: [parent, grandparent, ...] until engine base or unknown."""
+    chain: list[str] = []
+    current = class_name
+    visited: set[str] = set()
+    for _ in range(max_depth):
+        if current in visited:
+            break
+        visited.add(current)
+        cls = all_items.get(current)
+        if cls is None or not cls.bases:
+            break
+        chain.append(cls.bases[0])
+        current = cls.bases[0]
+    return chain
+
+
 def describe(src: str, class_name: str) -> RunResult:
     try:
         from .cpp_ts_parser import _normalize_cpp_type
@@ -139,6 +156,24 @@ def describe(src: str, class_name: str) -> RunResult:
 
         norm_name = _normalize_cpp_type(class_name)
         cls = all_items.get(norm_name) or all_items.get(class_name)
+
+        if not cls:
+            # Loose match: try adding UE prefixes (U/A/F/I) — handles "RFoo" → "ARFoo"
+            for prefix in ('U', 'A', 'F', 'I'):
+                candidate = prefix + class_name
+                if candidate in all_items:
+                    cls = all_items[candidate]
+                    break
+                candidate = prefix + norm_name
+                if candidate in all_items:
+                    cls = all_items[candidate]
+                    break
+        if not cls:
+            # Loose match: try stripping one UE prefix — handles "UARFoo" → "ARFoo"
+            if len(class_name) > 1 and class_name[0] in 'UAFI':
+                cls = all_items.get(class_name[1:])
+            if not cls and len(norm_name) > 1 and norm_name[0] in 'UAFI':
+                cls = all_items.get(norm_name[1:])
 
         if not cls:
             for k, v in all_items.items():
@@ -157,7 +192,14 @@ def describe(src: str, class_name: str) -> RunResult:
         if cls.namespace:
             lines.append(f"  Namespace: {cls.namespace}")
         if cls.bases:
-            lines.append(f"  Inheritance: {', '.join(cls.bases)}")
+            chain = _build_ancestor_chain(all_items, cls.name)
+            if len(chain) > 1:
+                lines.append(f"  Inheritance chain: {cls.name} → {' → '.join(chain)}")
+                extra = cls.bases[1:]
+                if extra:
+                    lines.append(f"  Also implements: {', '.join(extra)}")
+            else:
+                lines.append(f"  Inheritance: {', '.join(cls.bases)}")
 
         if cls.kind == "enum":
             lines += ["", "── Enum Values ──"]
@@ -227,6 +269,17 @@ def read_source(src: str, class_name: str, max_chars: int = 8000) -> RunResult:
         all_items = {**proj.classes, **proj.structs, **proj.enums}
         cls = all_items.get(class_name)
         if not cls:
+            # Loose match: try adding UE prefixes (U/A/F) — handles "ARFoo" → "UARFoo"
+            for prefix in ('U', 'A', 'F', 'I'):
+                candidate = prefix + class_name
+                if candidate in all_items:
+                    cls = all_items[candidate]
+                    break
+        if not cls:
+            # Loose match: try stripping one UE prefix — handles "UARFoo" → "ARFoo"
+            if len(class_name) > 1 and class_name[0] in 'UAFI':
+                cls = all_items.get(class_name[1:])
+        if not cls:
             return RunResult(ok=False, stdout="",
                              stderr=f"Could not find class `{class_name}`.")
 
@@ -265,7 +318,28 @@ def impact(src: str, target_class: str, depth: int = 3) -> RunResult:
         # Normalize target class name
         norm_name = _normalize_cpp_type(target_class)
         all_items = {**proj.classes, **proj.structs, **proj.enums}
-        actual_name = norm_name if norm_name in all_items else target_class
+
+        actual_name = target_class
+        if norm_name in all_items:
+            actual_name = norm_name
+        elif target_class in all_items:
+            actual_name = target_class
+        else:
+            found = False
+            for k in all_items.keys():
+                if k.lower() == norm_name.lower() or k.lower() == target_class.lower():
+                    actual_name = k
+                    found = True
+                    break
+            if not found:
+                for k in all_items.keys():
+                    for prefix in ('A', 'U', 'F', 'I', 'E', 'T'):
+                        if k == prefix + norm_name or k == prefix + target_class:
+                            actual_name = k
+                            found = True
+                            break
+                    if found:
+                        break
 
         analyzer = ImpactAnalyzer(proj)
         impact_tree = analyzer.trace_impact(actual_name, max_depth=depth)

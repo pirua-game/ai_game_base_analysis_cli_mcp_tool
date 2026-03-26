@@ -80,6 +80,8 @@ npm run dev
 Explore every class in your project without opening an IDE.
 
 - Fields, methods, and base classes per class
+- **Inheritance chain breadcrumb** — clickable `A → B → C → D` chain; click any ancestor to navigate to it
+- **Method Logic panel** — click any method to see its internal control flow (Guard / Branch / Loop / Switch / Always) in 5–10 lines, without reading the full source
 - Coupling metrics and dead-code flags
 - Unity Prefab / UE5 Blueprint back-references
 - Impact analysis — what else breaks if you change this class
@@ -136,12 +138,14 @@ Conversational AI that reads your actual code.
 |--------|---------|-------------|
 | Unity | **UnityEvent bindings** | Inspector-wired persistent calls invisible in code search |
 | Unity | **Animator analysis** | States, transitions, blend trees from AnimatorController |
-| UE5 | **GAS explorer** | Abilities, Effects, Attributes, Tags, ASC owners |
+| UE5 | **GAS explorer** | Abilities, Effects, Attributes, Tags, ASC owners — with `detail_level`, `category` (tag prefix), and `query` (keyword) filters |
 | UE5 | **Blueprint mapping** | C++ class → BP implementations, K2 overrides, events, variables |
 | UE5 | **Animation analysis** | ABP states, Montage slots, GAS Notifies |
 | UE5 | **BehaviorTree** | BT asset structure with task/decorator/service nodes |
 | UE5 | **StateTree** | StateTree (UE 5.2+) state + transition map |
 | Axmol | **Event bindings** | EventDispatcher and Scheduler binding map |
+
+All engine analysis results display a **Confidence badge** (🟢 HIGH / 🟡 MEDIUM / 🔴 LOW) indicating the reliability of the analysis based on the data source (source code vs. binary asset scanning).
 
 ---
 
@@ -150,12 +154,21 @@ Conversational AI that reads your actual code.
 | Setting | Description |
 |---------|-------------|
 | **Scripts path** | Absolute path to your project's source folder |
+| **Context button** | View the project's AI context (AGENTS.md) and run `gdep init` to generate it |
 | **Engine profile** | auto · Unity · UE5 · Axmol · .NET · C++ |
 | **Analysis depth** | 1–8 levels for flow and impact tracing |
 | **Focus classes** | Comma-separated list to narrow results |
 | **LLM provider** | Ollama / OpenAI / Claude / Gemini + model + API key |
 | **Theme** | Dark / Light |
 | **Language** | English / 한국어 |
+
+### Project Context (AGENTS.md)
+
+Click the **Context** button next to the cache refresh button to:
+
+1. View the auto-generated project context (or AGENTS.md if it exists)
+2. Click **Init AGENTS.md** to generate `.gdep/AGENTS.md` — a structured project overview consumed by AI tools (Claude Code, Cursor, etc.)
+3. Click **Regen AGENTS.md** to regenerate if the project has changed
 
 ---
 
@@ -167,19 +180,24 @@ The backend exposes a REST + WebSocket API consumed by the frontend. All routes 
 |--------|------|---------|
 | project | `POST /project/scan` | Coupling, cycles, dead code |
 | project | `POST /project/impact` | Blast-radius for a class |
+| project | `POST /project/describe` | Class structure with inheritance chain |
 | project | `POST /project/lint` | Lint issue scan |
 | project | `POST /project/advise` | LLM architecture advice |
 | project | `POST /project/test-scope` | Test files for a changed class |
 | project | `POST /project/diff-summary` | Architecture delta for a git diff |
+| project | `POST /project/explain-method-logic` | Internal control flow of a method (Guard/Branch/Loop) |
+| project | `GET  /project/context` | Project AI context / AGENTS.md content |
+| project | `POST /project/init` | Generate `.gdep/AGENTS.md` |
 | classes | `GET /classes/list` | All classes with fields + methods |
 | flow | `POST /flow/analyze` | Method call graph |
-| engine | `GET /engine/unity/events` | UnityEvent bindings |
-| engine | `GET /engine/unity/animator` | Animator structure |
-| engine | `GET /engine/ue5/gas` | GAS analysis |
-| engine | `GET /engine/ue5/animation` | ABP + Montage analysis |
-| engine | `GET /engine/ue5/behavior_tree` | BehaviorTree structure |
-| engine | `GET /engine/ue5/state_tree` | StateTree structure |
-| engine | `GET /engine/axmol/events` | Axmol event bindings |
+| engine | `POST /engine/unity/events` | UnityEvent bindings |
+| engine | `POST /engine/unity/animator` | Animator structure |
+| engine | `POST /engine/ue5/gas` | GAS analysis (detail_level / category / query) |
+| engine | `POST /engine/ue5/gas/graph` | GAS ReactFlow graph |
+| engine | `POST /engine/ue5/animation` | ABP + Montage analysis |
+| engine | `POST /engine/ue5/behavior_tree` | BehaviorTree structure |
+| engine | `POST /engine/ue5/state_tree` | StateTree structure |
+| engine | `POST /engine/axmol/events` | Axmol event bindings |
 | unity | `GET /unity/refs` | All prefab/scene references |
 | ue5 | `GET /ue5/blueprint_refs` | All blueprint references |
 | ue5 | `GET /ue5/blueprint_mapping` | C++↔BP detailed mapping |
@@ -199,10 +217,11 @@ web/
 │   ├── main.py                  # FastAPI app, CORS, router registration
 │   ├── requirements.txt
 │   └── routers/
-│       ├── project.py           # scan / impact / lint / advise / diff
+│       ├── project.py           # scan / impact / describe / lint / advise / diff
+│       │                        # explain-method-logic / context / init
 │       ├── classes.py           # class list parser (C# / C++ / UE5)
 │       ├── flow.py              # call graph tracer
-│       ├── engine.py            # engine-specific analyzers
+│       ├── engine.py            # engine-specific analyzers (GAS w/ filters)
 │       ├── unity.py             # Unity ref queries
 │       ├── ue5.py               # UE5 blueprint queries
 │       ├── agent.py             # SSE agent with tool-calling
@@ -214,13 +233,15 @@ web/
     └── src/
         ├── App.tsx              # Tab layout
         ├── store.tsx            # Global state + caching
+        ├── api/
+        │   └── client.ts        # Typed API functions
         ├── components/
-        │   └── Sidebar.tsx      # Project config panel
+        │   ├── Sidebar.tsx      # Project config panel + Context modal
+        │   ├── ClassBrowser.tsx # Class explorer + Method Logic + inheritance chain
+        │   ├── DependencyView.tsx  # Dependency tabs + GAS filters
+        │   ├── WatchPanel.tsx   # Real-time file watcher
+        │   └── ConfidenceBadge.tsx  # HIGH/MEDIUM/LOW confidence pill badge
         └── tabs/
-            ├── ClassBrowser.tsx
-            ├── FlowGraph.tsx
-            ├── DependencyView.tsx
-            ├── WatchPanel.tsx
             └── AgentChat.tsx
 ```
 

@@ -85,7 +85,7 @@ pip install gdep "mcp[cli]"
 
 | ツール | 説明 |
 |--------|------|
-| `analyze_ue5_gas` | GA/GE/AS クラス + GameplayTag + ASC使用箇所。**信頼度ヘッダー**（分析方法/信頼ティア/カバレッジ/UEバージョン）+ IS-Aアセット役割分類（GA/GE/AS/ABP vs 参照のみ）を含む。GUIDノイズタグをフィルタリング。 |
+| `analyze_ue5_gas` | GA/GE/AS クラス + GameplayTag + ASC使用箇所。**信頼度ヘッダー**（分析方法/信頼ティア/カバレッジ/UEバージョン）+ IS-Aアセット役割分類（GA/GE/AS/ABP vs 参照のみ）を含む。GUIDノイズタグをフィルタリング。`enum class` 誤検知修正済み。 |
 | `analyze_ue5_behavior_tree` | BT_* .uasset → Task/Decorator/Service |
 | `analyze_ue5_state_tree` | ST_* .uasset → Task/AIController連携 |
 | `analyze_ue5_animation` | ABPステートマシン + Montageセクション/GAS Notify |

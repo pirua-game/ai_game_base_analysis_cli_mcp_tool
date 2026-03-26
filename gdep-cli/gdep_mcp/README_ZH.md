@@ -99,7 +99,7 @@ pip install gdep "mcp[cli]"
 
 | 工具 | 说明 |
 |------|------|
-| `analyze_ue5_gas` | GA/GE/AS 类 + GameplayTag + ASC 使用处。包含**置信度标头**（分析方法/置信等级/覆盖率/UE版本）+ IS-A 资产角色分类（GA/GE/AS/ABP vs 仅引用）。过滤 GUID 噪声标签。 |
+| `analyze_ue5_gas` | GA/GE/AS 类 + GameplayTag + ASC 使用处。包含**置信度标头**（分析方法/置信等级/覆盖率/UE版本）+ IS-A 资产角色分类（GA/GE/AS/ABP vs 仅引用）。过滤 GUID 噪声标签。已修复 `enum class` 误报。 |
 | `analyze_ue5_behavior_tree` | BT_* .uasset → Task/Decorator/Service |
 | `analyze_ue5_state_tree` | ST_* .uasset → Task/AIController 连接 |
 | `analyze_ue5_animation` | ABP 状态机 + Montage 分段/插槽/GAS Notify |

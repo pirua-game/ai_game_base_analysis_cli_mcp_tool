@@ -15,6 +15,7 @@ if str(_GDEP_ROOT) not in sys.path:
     sys.path.insert(0, str(_GDEP_ROOT))
 
 from gdep import runner
+from gdep.confidence import ConfidenceTier, confidence_footer
 from gdep.detector import detect, ProjectKind
 
 
@@ -83,7 +84,7 @@ def run(project_path: str, class_name: str, method_name: str) -> str:
         if file_ref:
             lines.append(f"\nSource: {file_ref} : {method_name}()")
 
-        return "\n".join(lines)
+        return "\n".join(lines) + confidence_footer(ConfidenceTier.HIGH, "source-level control flow")
 
     except Exception as e:
         return f"[explain_method_logic] Error: {e}"

@@ -75,7 +75,7 @@ public class DescribeCommand
 
         if (format == "console")
         {
-            PrintConsole(target, referencedBy);
+            PrintConsole(target, referencedBy, allParsed);
         }
         else
         {
@@ -99,7 +99,7 @@ public class DescribeCommand
 
     // ── Console Output ────────────────────────────────────────────────
 
-    private void PrintConsole(ParsedType t, List<string> referencedBy)
+    private void PrintConsole(ParsedType t, List<string> referencedBy, List<ParsedType> allParsed)
     {
         var node = t.Node;
         var kindLabel = t.TypeKind switch
@@ -131,8 +131,20 @@ public class DescribeCommand
         if (node.BaseTypes.Any())
         {
             AnsiConsole.MarkupLine("[yellow]── Inheritance / Implementation[/]");
-            foreach (var bt in node.BaseTypes)
-                AnsiConsole.MarkupLine($"  [purple]:[/] {Markup.Escape(bt)}");
+            var chain = BuildAncestorChain(node.Name, allParsed);
+            if (chain.Count > 1)
+            {
+                var chainStr = string.Join(" → ", new[] { node.Name }.Concat(chain));
+                AnsiConsole.MarkupLine($"  [purple]chain:[/] {Markup.Escape(chainStr)}");
+                var extra = node.BaseTypes.Skip(1).ToList();
+                if (extra.Any())
+                    AnsiConsole.MarkupLine($"  [purple]also:[/] {Markup.Escape(string.Join(", ", extra))}");
+            }
+            else
+            {
+                foreach (var bt in node.BaseTypes)
+                    AnsiConsole.MarkupLine($"  [purple]:[/] {Markup.Escape(bt)}");
+            }
             AnsiConsole.WriteLine();
         }
 
@@ -372,6 +384,24 @@ public class DescribeCommand
 
         sb.AppendLine("}");
         return sb.ToString();
+    }
+
+    private static List<string> BuildAncestorChain(string className, List<ParsedType> allParsed, int maxDepth = 20)
+    {
+        var lookup = allParsed.ToDictionary(p => p.Node.Name, p => p.Node);
+        var chain = new List<string>();
+        var current = className;
+        var visited = new HashSet<string>();
+        for (int i = 0; i < maxDepth; i++)
+        {
+            if (visited.Contains(current)) break;
+            visited.Add(current);
+            if (!lookup.TryGetValue(current, out var node) || !node.BaseTypes.Any())
+                break;
+            chain.Add(node.BaseTypes[0]);
+            current = node.BaseTypes[0];
+        }
+        return chain;
     }
 
     private int CountPartialFiles(ParsedType t)

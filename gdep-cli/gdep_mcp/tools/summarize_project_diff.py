@@ -17,6 +17,7 @@ if str(_GDEP_ROOT) not in sys.path:
     sys.path.insert(0, str(_GDEP_ROOT))
 
 from gdep.runner import _load_cs_cache, _src, ANSI_ESCAPE
+from gdep.confidence import ConfidenceTier, confidence_footer
 from gdep.detector import detect
 
 
@@ -264,7 +265,7 @@ def run(project_path: str, commit_ref: str | None = None) -> str:
             lines += ["", "### Recommended review points"]
             lines += recs
 
-        return "\n".join(lines)
+        return "\n".join(lines) + confidence_footer(ConfidenceTier.MEDIUM, "git diff + cached scan")
 
     except Exception as e:
         return f"[summarize_project_diff] Error: {e}"

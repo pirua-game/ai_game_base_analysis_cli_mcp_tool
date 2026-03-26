@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, ReactNode } from 'react'
-import { RefreshCw, ChevronDown, Info } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import type { ReactNode } from 'react'
+import { RefreshCw, ChevronDown, Info, BookOpen, FilePlus } from 'lucide-react'
 import { useApp, type EngineProfile } from '../store'
-import { projectApi, llmApi } from '../api/client'
+import { projectApi, llmApi, type ProjectContextResult } from '../api/client'
 
 // ── 툴팁 (fixed 포지셔닝으로 클리핑 방지) ────────────────────
 function Tip({ text, children }: { text: string; children: ReactNode }) {
@@ -74,6 +75,12 @@ export default function Sidebar() {
   const [customInput, setCustomInput] = useState(customBaseClasses.join(','))
   const [ollamaModels, setOllamaModels] = useState<string[]>([])
   const [scanningMdl,  setScanningMdl] = useState(false)
+  // Project Context modal (Phase 2-5)
+  const [contextOpen,   setContextOpen]   = useState(false)
+  const [contextResult, setContextResult] = useState<ProjectContextResult | null>(null)
+  const [contextLoading,setContextLoading]= useState(false)
+  const [initLoading,   setInitLoading]   = useState(false)
+  const [initMsg,       setInitMsg]       = useState('')
 
   const ENGINE_PROFILES: { value: EngineProfile; label: string }[] = [
     { value: 'auto',     label: t('engine_auto') },
@@ -128,6 +135,7 @@ export default function Sidebar() {
   const badge = projectInfo ? KIND_BADGE[projectInfo.kind] : null
 
   return (
+    <>
     <aside className="w-64 shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col h-screen">
       <div className="p-4 border-b border-gray-800 shrink-0">
         <h1 className="text-lg font-bold text-emerald-400">{t('sidebar_title')}</h1>
@@ -179,10 +187,28 @@ export default function Sidebar() {
             </p>
           )}
           {scriptsPath && (
-            <button className="mt-1.5 btn-ghost text-xs w-full text-center"
-              onClick={() => { clearCache(scriptsPath); window.location.reload() }}>
-              {t('cache_refresh')}
-            </button>
+            <div className="mt-1.5 flex gap-1">
+              <button className="btn-ghost text-xs flex-1 text-center"
+                onClick={() => { clearCache(scriptsPath); window.location.reload() }}>
+                {t('cache_refresh')}
+              </button>
+              <button
+                className="btn-ghost text-xs px-2 flex items-center gap-1 text-cyan-400 hover:text-cyan-300"
+                title="Project Context / AGENTS.md"
+                onClick={async () => {
+                  setContextOpen(true)
+                  if (!contextResult) {
+                    setContextLoading(true)
+                    try {
+                      const r = await projectApi.getContext(scriptsPath)
+                      setContextResult(r)
+                    } catch { setContextResult(null) }
+                    finally { setContextLoading(false) }
+                  }
+                }}>
+                <BookOpen size={12} /> Context
+              </button>
+            </div>
           )}
         </div>
 
@@ -284,5 +310,74 @@ export default function Sidebar() {
 
       </div>
     </aside>
+
+    {/* Project Context 모달 */}
+    {contextOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+        onClick={e => { if (e.target === e.currentTarget) setContextOpen(false) }}>
+        <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl w-[680px] max-h-[80vh] flex flex-col">
+          {/* 헤더 */}
+          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700 shrink-0">
+            <h2 className="text-sm font-semibold text-cyan-300 flex items-center gap-2">
+              <BookOpen size={14} /> Project Context
+            </h2>
+            <div className="flex items-center gap-2">
+              {scriptsPath && (
+                <button
+                  className="text-xs px-3 py-1 rounded border border-emerald-700 text-emerald-400
+                             hover:bg-emerald-900 transition-colors flex items-center gap-1 disabled:opacity-50"
+                  disabled={initLoading}
+                  onClick={async () => {
+                    setInitLoading(true); setInitMsg('')
+                    try {
+                      const r = await projectApi.init(
+                        scriptsPath,
+                        !!contextResult?.has_agents_md,
+                      )
+                      setInitMsg(r.message)
+                      // 재로드
+                      const fresh = await projectApi.getContext(scriptsPath)
+                      setContextResult(fresh)
+                    } catch (e: any) {
+                      setInitMsg(`Error: ${e?.message ?? e}`)
+                    } finally { setInitLoading(false) }
+                  }}>
+                  <FilePlus size={11} />
+                  {contextResult?.has_agents_md ? 'Regen AGENTS.md' : 'Init AGENTS.md'}
+                </button>
+              )}
+              <button className="text-gray-400 hover:text-gray-200 text-lg leading-none px-1"
+                onClick={() => setContextOpen(false)}>✕</button>
+            </div>
+          </div>
+
+          {/* 본문 */}
+          <div className="flex-1 overflow-y-auto p-5">
+            {contextLoading ? (
+              <p className="text-sm text-gray-400 animate-pulse">Loading context…</p>
+            ) : contextResult ? (
+              <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono leading-relaxed">
+                {contextResult.context}
+              </pre>
+            ) : (
+              <p className="text-sm text-gray-500">Failed to load context.</p>
+            )}
+            {initMsg && (
+              <p className="mt-3 text-xs text-emerald-400 border-t border-gray-700 pt-2">{initMsg}</p>
+            )}
+          </div>
+
+          {/* 푸터 */}
+          {contextResult?.has_agents_md && (
+            <div className="px-5 py-2 border-t border-gray-700 shrink-0">
+              <p className="text-xs text-gray-500">
+                📄 {contextResult.agents_md_path}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+  </>
   )
 }

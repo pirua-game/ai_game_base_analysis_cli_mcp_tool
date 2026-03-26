@@ -16,6 +16,7 @@ if str(_GDEP_ROOT) not in sys.path:
     sys.path.insert(0, str(_GDEP_ROOT))
 
 from gdep import runner
+from gdep.confidence import ConfidenceTier, confidence_footer
 from gdep.detector import detect
 
 
@@ -88,7 +89,7 @@ def run(project_path: str, class_name: str, depth: int = 3) -> str:
                 cover_hint = f" (covers: {matched})" if matched else ""
                 sections.append(f"- `{rel}` [{engine}]{cover_hint}")
 
-        return "\n".join(sections)
+        return "\n".join(sections) + confidence_footer(ConfidenceTier.HIGH, "reverse dependency + test pattern")
 
     except Exception as e:
         return f"[suggest_test_scope] Error: {e}"

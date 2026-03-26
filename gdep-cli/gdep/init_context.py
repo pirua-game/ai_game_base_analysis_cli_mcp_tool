@@ -28,17 +28,17 @@ _PREAMBLE = """\
 # gdep Agent Context
 > Generated: {date}  |  Engine: {engine}  |  Project: {name}
 
-## ⚡ CRITICAL: Read This First
+## Project Analysis Tools
 
 This project uses **gdep MCP** for codebase analysis.
 gdep is a static analyser that understands game engine internals:
 prefab bindings, Blueprint↔C++ bridges, GAS flows, Animator state machines, etc.
 
-### Rules for every AI assistant working on this project
+### Available capabilities
 
-1. **Start structural questions with gdep tools** — they are cached, fast, and understand
+1. **gdep tools provide cached, fast structural analysis** — they understand
    game-engine semantics (Blueprint↔C++ bridges, GAS flows, Animator state machines).
-   Always call `get_project_context` first in a new session.
+   Consider calling `get_project_context` for a cached structural overview at the start of a new session.
 
 2. **Check the Confidence level in every gdep response before acting on it:**
    - **HIGH** (C++ / Roslyn source parsing) — trust without additional verification
@@ -47,123 +47,63 @@ prefab bindings, Blueprint↔C++ bridges, GAS flows, Animator state machines, et
    - **LOW** (filename heuristics, LFS stubs > 50%) — treat as an index only;
      always read the relevant source files before making changes
 
-3. **Read source files directly when:**
-   - gdep confidence is MEDIUM or LOW *and* the decision is architectural
-   - gdep results conflict with what you see in source code
-   - You are about to perform a structural change (refactor, rename, delete)
-
-4. **All tools accept `project_path` as first argument.**
+3. **All tools accept `project_path` as first argument.**
    The correct path for this project is in the "Project Info" section below.
    Use it verbatim — do not guess or construct paths.
 
-5. **Chain tools when needed.** A question like "is it safe to refactor X?"
-   warrants `analyze_impact_and_risk` followed by `inspect_architectural_health`.
-
 """
 
 
 # ─────────────────────────────────────────────────────────────
-# 트리거 → 도구 매핑 (공통 + 엔진별)
+# Quick Reference + 엔진별 세션 플로우
 # ─────────────────────────────────────────────────────────────
 
-_TRIGGER_TABLE_COMMON = """\
-## Trigger → Tool Mapping
-
-When you detect **any** of the following patterns in the user's message,
-call the corresponding tool **immediately** without asking for confirmation.
-
-### Universal triggers (always available)
-
-| If the user says / asks … | Call this tool |
-|---------------------------|---------------|
-| "what does class X do?" / "show me X" / "explain X" | `explore_class_semantics(path, "X")` |
-| "what does method X do internally?" / "conditions inside X" / "when does X return early?" | `explain_method_logic(path, "Class", "X")` |
-| "modify / refactor / rename / delete class X" | `analyze_impact_and_risk(path, "X")` |
-| "what breaks if I change X?" / "is it safe to touch X?" | `analyze_impact_and_risk(path, "X")` |
-| "quick impact of X" / "how many classes use X?" | `analyze_impact_and_risk(path, "X", detail_level="summary")` |
-| "how does [feature] work?" / "trace [method]" | `trace_gameplay_flow(path, "Class", "Method")` |
-| "what calls X?" / "where is X called from?" | `trace_gameplay_flow(path, "X", ...)` |
-| "technical debt" / "codebase health" / "circular deps" / "dead code" | `inspect_architectural_health(path)` |
-| "architecture advice" / "what should I fix first?" / "prioritize improvements" | `get_architecture_advice(path)` |
-| "scan" / "overview" / "coupling" / "dependencies" | `execute_gdep_cli(["scan", path, "--circular", "--dead-code"])` |
-| "lint" / "anti-patterns" / "code smell" | `execute_gdep_cli(["lint", path])` |
-| "fix lint" / "lint fix suggestions" / "how to fix anti-patterns" | `suggest_lint_fixes(path)` |
-| "which tests to run?" / "test files for X" / "test coverage of X" | `suggest_test_scope(path, "X")` |
-| "what changed?" / "summarize this PR" / "diff summary" / "impact of commit" | `summarize_project_diff(path)` |
-| anything about a class you've never seen before | `explore_class_semantics(path, "ClassName")` **first** |
-
-### Rule: before writing ANY code that touches an existing class
-
-Always call `analyze_impact_and_risk` first.
-Only skip this if the user explicitly says "I know the impact, just write it."
+_QUICK_REF_COMMON = """\
+## Quick Reference
+Common: `explore_class_semantics` · `trace_gameplay_flow` · `analyze_impact_and_risk` · `inspect_architectural_health` · `get_architecture_advice` · `explain_method_logic` · `suggest_lint_fixes` · `summarize_project_diff`
 
 """
 
-_TRIGGER_TABLE_UE5 = """\
-### UE5-specific triggers
-
-| If the user says / asks … | Call this tool |
-|---------------------------|---------------|
-| "GAS" / "Ability" / "GameplayEffect" / "AttributeSet" / "GameplayTag" | `analyze_ue5_gas(path)` |
-| "which Blueprint inherits X?" / "BP implementation of X" | `analyze_ue5_blueprint_mapping(path, "X")` |
-| "Blueprint event" / "K2 override" / "what does BP_X do?" | `analyze_ue5_blueprint_mapping(path, "X")` |
-| "BehaviorTree" / "BT_" / "AIController" / "Blackboard" | `analyze_ue5_behavior_tree(path)` |
-| "StateTree" / "ST_" / "AI state" | `analyze_ue5_state_tree(path)` |
-| "animation" / "ABP" / "Montage" / "slot" / "GAS notify" | `analyze_ue5_animation(path)` |
-| "C++ to Blueprint" / "native to BP" / "K2_Activate" | `analyze_ue5_blueprint_mapping(path)` |
-
-### UE5 recommended session flow
+_SESSION_FLOW_UE5 = """\
+## UE5 Tools & Session Flow
+UE5: `analyze_ue5_gas` · `analyze_ue5_blueprint_mapping` · `analyze_ue5_behavior_tree` · `analyze_ue5_state_tree` · `analyze_ue5_animation`
 
 ```
-# New session on a UE5 project
-1. get_project_context(path)                    # mandatory first call
-2. explore_class_semantics(path, "AMyChar")     # understand entry point
-3. analyze_ue5_gas(path)                        # if GAS is used
-4. analyze_ue5_blueprint_mapping(path, "AMyChar") # find BP implementations
-5. trace_gameplay_flow(path, "AMyChar", "BeginPlay") # trace a specific flow
+# New UE5 session
+1. get_project_context(path)
+2. explore_class_semantics(path, "AMyChar")
+3. analyze_ue5_gas(path)
+4. analyze_ue5_blueprint_mapping(path, "AMyChar")
+5. trace_gameplay_flow(path, "AMyChar", "BeginPlay")
 ```
 
 """
 
-_TRIGGER_TABLE_AXMOL = """\
-### Axmol / Cocos2d-x-specific triggers
-
-| If the user says / asks … | Call this tool |
-|---------------------------|---------------|
-| "EventDispatcher" / "addEventListenerWith" / "Scheduler" / "scheduleUpdate" | `analyze_axmol_events(path)` |
-| "event bindings" / "callback map" / "who handles event X?" | `analyze_axmol_events(path)` |
-| "Axmol memory" / "retain/release" / "AXM-MEM" | `execute_gdep_cli(["lint", path])` |
-
-### Axmol recommended session flow
+_SESSION_FLOW_UNITY = """\
+## Unity Tools & Session Flow
+Unity: `find_unity_event_bindings` · `analyze_unity_animator`
 
 ```
-# New session on an Axmol / Cocos2d-x project
-1. get_project_context(path)                         # mandatory first call
-2. explore_class_semantics(path, "AppDelegate")      # understand entry point
-3. analyze_axmol_events(path)                        # reveal EventDispatcher/Scheduler bindings
-4. analyze_impact_and_risk(path, "ClassName")        # before any refactor
+# New Unity session
+1. get_project_context(path)
+2. explore_class_semantics(path, "GameManager")
+3. find_unity_event_bindings(path)
+4. analyze_unity_animator(path)
+5. analyze_impact_and_risk(path, "ClassName")
 ```
 
 """
 
-_TRIGGER_TABLE_UNITY = """\
-### Unity-specific triggers
-
-| If the user says / asks … | Call this tool |
-|---------------------------|---------------|
-| "Inspector binding" / "Button.onClick" / "UnityEvent" / "who calls method X?" | `find_unity_event_bindings(path)` |
-| "Animator" / "animation state" / "state machine" / ".controller" | `analyze_unity_animator(path)` |
-| "Prefab ref" / "which prefab uses X?" | `execute_gdep_cli(["scan", path, "--include-refs"])` |
-
-### Unity recommended session flow
+_SESSION_FLOW_AXMOL = """\
+## Axmol Tools & Session Flow
+Axmol: `analyze_axmol_events`
 
 ```
-# New session on a Unity project
-1. get_project_context(path)                         # mandatory first call
-2. explore_class_semantics(path, "GameManager")      # understand entry point
-3. find_unity_event_bindings(path)                   # reveal Inspector wiring
-4. analyze_unity_animator(path)                      # if animation is relevant
-5. analyze_impact_and_risk(path, "ClassName")        # before any refactor
+# New Axmol session
+1. get_project_context(path)
+2. explore_class_semantics(path, "AppDelegate")
+3. analyze_axmol_events(path)
+4. analyze_impact_and_risk(path, "ClassName")
 ```
 
 """
@@ -209,17 +149,20 @@ def _build_agents_md(project_path: str) -> str:
     elif profile.kind == ProjectKind.UNITY:
         _append_unity_context(lines, src_path)
 
-    # 5. 트리거 → 도구 매핑
-    lines.append(_TRIGGER_TABLE_COMMON)
+    # 5. Quick Reference + 엔진별 세션 플로우
+    lines.append(_QUICK_REF_COMMON)
     if profile.kind == ProjectKind.UNREAL:
-        lines.append(_TRIGGER_TABLE_UE5)
+        lines.append(_SESSION_FLOW_UE5)
     elif profile.kind == ProjectKind.UNITY:
-        lines.append(_TRIGGER_TABLE_UNITY)
+        lines.append(_SESSION_FLOW_UNITY)
     elif profile.kind == ProjectKind.CPP:
-        lines.append(_TRIGGER_TABLE_AXMOL)
+        lines.append(_SESSION_FLOW_AXMOL)
 
-    # 6. 도구 빠른 참조
-    lines += _build_tool_reference(src_path, profile.kind)
+    lines += [
+        "---",
+        "*Regenerate this file: `gdep init <project_path> --force`*",
+        "",
+    ]
 
     return "\n".join(lines)
 
@@ -228,7 +171,7 @@ def _append_scan_snapshot(lines: list[str], profile, src_path: str) -> None:
     """스캔 결과 스냅샷 (클래스 수, 결합도 Top5, 순환참조)."""
     try:
         scan_result = runner.scan(profile, circular=True, dead_code=True,
-                                  deep=False, top=10, fmt="json")
+                                  deep=False, include_refs=True, top=10, fmt="json")
         if not (scan_result.ok and scan_result.data):
             return
         d = scan_result.data
@@ -278,7 +221,8 @@ def _append_ue5_context(lines: list[str], src_path: str) -> None:
             f"- Abilities (C++): {len(report.abilities)}",
             f"- Effects (C++): {len(report.effects)}",
             f"- AttributeSets: {len(report.attr_sets)}",
-            f"- GameplayTags (in assets): {len(report.all_tags)}",
+            f"- GameplayTags (in assets): {len(report.all_tags)} high-confidence"
+            + (f" / {len(report.all_tags_low)} low" if report.all_tags_low else ""),
             f"- GAS .uassets — IS-A: GA {ga_count} / GE {ge_count} / AS {as_count} / ABP {abp_count}"
             f"  |  Referencers: {ref_count}",
         ]
@@ -326,83 +270,6 @@ def _append_unity_context(lines: list[str], src_path: str) -> None:
     except Exception:
         pass
 
-
-def _build_tool_reference(src_path: str, kind: ProjectKind) -> list[str]:
-    """모든 도구의 빠른 복사-붙여넣기 참조 섹션."""
-    p = f'"{src_path}"'
-    lines = [
-        "## Tool Quick Reference",
-        "",
-        "Copy-paste ready. Replace `<X>` with actual class / method names.",
-        "",
-        "```python",
-        "# ── Always call first ─────────────────────────────────",
-        f"get_project_context({p})",
-        "",
-        "# ── Structure & health ────────────────────────────────",
-        f'explore_class_semantics({p}, "<ClassName>")',
-        f'analyze_impact_and_risk({p}, "<ClassName>")',
-        f'inspect_architectural_health({p})',
-        f'get_architecture_advice({p})',
-        f'execute_gdep_cli(["scan", {p}, "--circular", "--dead-code", "--top", "20"])',
-        "",
-        "# ── Lint & fixes ──────────────────────────────────────",
-        f'execute_gdep_cli(["lint", {p}])',
-        f'suggest_lint_fixes({p})',
-        "",
-        "# ── Flow tracing ──────────────────────────────────────",
-        f'explain_method_logic({p}, "<Class>", "<Method>")',
-        f'trace_gameplay_flow({p}, "<Class>", "<Method>")',
-        f'trace_gameplay_flow({p}, "<Class>", "<Method>", depth=6)',
-        "",
-        "# ── Test scope ────────────────────────────────────────",
-        f'suggest_test_scope({p}, "<ClassName>")',
-        f'execute_gdep_cli(["test-scope", {p}, "<ClassName>", "--format", "json"])',
-        "",
-        "# ── Impact & diff ─────────────────────────────────────",
-        f'analyze_impact_and_risk({p}, "<ClassName>")',
-        f'analyze_impact_and_risk({p}, "<ClassName>", detail_level="summary")',
-        f'analyze_impact_and_risk({p}, "<ClassName>", query="<FilterKeyword>")',
-        f'summarize_project_diff({p})',
-        f'execute_gdep_cli(["diff",   {p}, "--commit", "HEAD~1", "--fail-on-cycles"])',
-    ]
-
-    if kind == ProjectKind.UNREAL:
-        lines += [
-            "",
-            "# ── UE5 specific ──────────────────────────────────────",
-            f'analyze_ue5_gas({p})',
-            f'analyze_ue5_blueprint_mapping({p})',
-            f'analyze_ue5_blueprint_mapping({p}, "<CppClass>")',
-            f'analyze_ue5_behavior_tree({p})',
-            f'analyze_ue5_state_tree({p})',
-            f'analyze_ue5_animation({p})',
-            f'analyze_ue5_animation({p}, detail_level="full")',
-        ]
-    elif kind == ProjectKind.UNITY:
-        lines += [
-            "",
-            "# ── Unity specific ────────────────────────────────────",
-            f'find_unity_event_bindings({p})',
-            f'find_unity_event_bindings({p}, method_name="<MethodName>")',
-            f'analyze_unity_animator({p})',
-            f'execute_gdep_cli(["scan", {p}, "--include-refs"])',
-        ]
-    elif kind == ProjectKind.CPP:
-        lines += [
-            "",
-            "# ── Axmol / C++ specific ──────────────────────────────",
-            f'analyze_axmol_events({p})',
-        ]
-
-    lines += [
-        "```",
-        "",
-        "---",
-        "*Regenerate this file: `gdep init <project_path> --force`*",
-        "",
-    ]
-    return lines
 
 
 # ─────────────────────────────────────────────────────────────

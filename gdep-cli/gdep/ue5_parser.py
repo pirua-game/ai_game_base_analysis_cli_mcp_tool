@@ -550,8 +550,10 @@ def compute_coupling(proj: UE5Project) -> list[dict]:
                 counts[t] = counts.get(t, 0) + 1
 
     result = []
-    # Remove self-dependencies and rank items
+    # Remove self-dependencies and rank items; exclude engine/external types
     for name, score in sorted(counts.items(), key=lambda x: (-x[1], x[0])):
+        if name not in all_cls:   # 프로젝트 외부 타입(엔진 API 등) 제외
+            continue
         cls = all_cls.get(name)
         file_name = Path(cls.source_file).name if cls else "External / Engine"
         full_path = cls.source_file if cls else ""

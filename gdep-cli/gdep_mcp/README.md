@@ -102,7 +102,7 @@ pip install gdep "mcp[cli]"
 
 | Tool | Description |
 |------|-------------|
-| `analyze_ue5_gas` | GA/GE/AS classes + GameplayTag extraction + ASC usage. Returns **confidence header** (method / tier / coverage / UE version) + IS-A asset role breakdown (GA / GE / AS / ABP vs referencer). Tag noise filtered (GUID segments rejected). |
+| `analyze_ue5_gas` | GA/GE/AS classes + GameplayTag extraction + ASC usage. Returns **confidence header** (method / tier / coverage / UE version) + IS-A asset role breakdown (GA / GE / AS / ABP vs referencer). Tag noise filtered (GUID segments rejected). Enum class false-positive fixed. |
 | `analyze_ue5_behavior_tree` | BT_* .uasset → Task/Decorator/Service/Blackboard |
 | `analyze_ue5_state_tree` | ST_* .uasset → Task/AIController connections |
 | `analyze_ue5_animation` | ABP state machine + Montage sections/slots/GAS Notify |

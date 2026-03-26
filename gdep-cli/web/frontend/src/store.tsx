@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useRef, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useRef, useEffect } from 'react'
+import type { ReactNode } from 'react'
 import type { FlowData, ProjectInfo, LLMConfig, ClassInfo, ScanResult, PrefabRef } from './api/client'
 import { type Lang, type TranslationKey, translations } from './i18n'
 

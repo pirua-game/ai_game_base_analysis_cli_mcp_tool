@@ -6,8 +6,9 @@
 [![PyPI](https://img.shields.io/pypi/v/gdep)](https://pypi.org/project/gdep/)
 [![npm](https://img.shields.io/npm/v/gdep-mcp)](https://www.npmjs.com/package/gdep-mcp)
 
-> *"If I modify this class, what breaks?"* — answered in 3 seconds, zero hallucinations.
-> Measured: **100% accuracy** with MCP (code-based facts) vs hallucinations without
+> *"If I modify this class, what breaks?"* — answered in 3 seconds, grounded in source.
+> Source-grounded: structural facts from C++ source and binary assets.
+> Confidence tier (HIGH/MEDIUM/LOW) reported on every result.
 
 **Read this in other languages:**
 [한국어](./README_KR.md) · [日本語](./README_JA.md) · [简体中文](./README_ZH.md) · [繁體中文](./README_ZH_TW.md)
@@ -190,7 +191,7 @@ Full documentation → [gdep-cli/web/README.md](./gdep-cli/web/README.md)
 |---------|---------|-------------|
 | `detect` | Auto-detect engine type | Before first analysis |
 | `scan` | Coupling · Cycles · Dead code | Understand structure, before refactor |
-| `describe` | Class detail + Blueprint impl + AI summary | Unfamiliar class, code review |
+| `describe` | Class detail + **full inheritance chain** + Blueprint impl + AI summary | Unfamiliar class, code review |
 | `flow` | Method call chain (C++→BP boundary) | Bug tracing, flow analysis |
 | `impact` | Change impact reverse-trace | Safety check before refactoring |
 | `test-scope` | Test files to run after modifying a class | Before merging, CI planning |

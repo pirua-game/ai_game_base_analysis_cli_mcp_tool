@@ -51,6 +51,23 @@ public class DependencyGraph
     public IReadOnlyDictionary<string, ClassNode> Nodes => _nodes;
     public IReadOnlyDictionary<string, List<Edge>> Edges => _edges;
 
+    public List<string> GetAncestorChain(string className, int maxDepth = 20)
+    {
+        var chain = new List<string>();
+        var current = className;
+        var visited = new HashSet<string>();
+        for (int i = 0; i < maxDepth; i++)
+        {
+            if (visited.Contains(current)) break;
+            visited.Add(current);
+            if (!_nodes.TryGetValue(current, out var node) || !node.BaseTypes.Any())
+                break;
+            chain.Add(node.BaseTypes[0]);
+            current = node.BaseTypes[0];
+        }
+        return chain;
+    }
+
     // 결합도: in-degree, 상속 엣지 제외 옵션
     public Dictionary<string, int> GetCouplingScores(bool excludeInheritance = true)
     {

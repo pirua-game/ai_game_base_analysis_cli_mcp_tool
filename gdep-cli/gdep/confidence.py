@@ -70,6 +70,12 @@ _UE5_VALIDATED    = ("5.0", "5.1", "5.2", "5.3", "5.4", "5.5", "5.6")
 _UE5_EXPERIMENTAL = ("5.7", "5.8", "5.9")
 
 
+def confidence_footer(tier: ConfidenceTier, method: str = "") -> str:
+    """MCP 도구 응답 하단에 삽입할 한 줄 신뢰도 푸터."""
+    m = f" ({method})" if method else ""
+    return f"\n\n> Confidence: **{tier.value.upper()}**{m}"
+
+
 def _ue_version_tier(version: str) -> str:
     if any(version.startswith(v) for v in _UE5_VALIDATED):
         return "validated"

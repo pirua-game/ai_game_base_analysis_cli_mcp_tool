@@ -14,6 +14,7 @@ import {
   type CouplingItem, type ClassInfo, type PrefabRef, type BlueprintRef,
   type DeadNode, type ImpactNode, type TestScopeFile, type LintFixIssue,
 } from '../api/client'
+import { ConfidenceFromText } from './ConfidenceBadge'
 
 // ── 상속 그래프 빌더 ─────────────────────────────────────────
 function buildInheritanceGraph(target: string, classMap: Record<string, ClassInfo>) {
@@ -852,6 +853,7 @@ function UnityEventsTab({ scriptsPath }: { scriptsPath: string }) {
         <p className="text-xs text-gray-500">{t('unity_ev_desc')}</p>
       </div>
       <div className="flex-1 overflow-y-auto border border-gray-800 rounded bg-gray-900/50 p-4">
+        {result && !loading && <div className="mb-2"><ConfidenceFromText text={result} /></div>}
         <MdResult text={result} loading={loading} />
       </div>
     </div>
@@ -887,6 +889,7 @@ function UnityAnimatorTab({ scriptsPath }: { scriptsPath: string }) {
         <p className="text-xs text-gray-500">{t('unity_anim_desc')}</p>
       </div>
       <div className="flex-1 overflow-y-auto border border-gray-800 rounded bg-gray-900/50 p-4">
+        {result && !loading && <div className="mb-2"><ConfidenceFromText text={result} /></div>}
         <MdResult text={result} loading={loading} />
       </div>
     </div>
@@ -1070,15 +1073,24 @@ function GasGraph({ scriptsPath }: { scriptsPath: string }) {
 
 function UE5GasTab({ scriptsPath }: { scriptsPath: string }) {
   const { t } = useApp()
-  const [result,    setResult]    = useState('')
-  const [loading,   setLoading]   = useState(false)
-  const [className, setClassName] = useState('')
-  const [view,      setView]      = useState<'text' | 'graph'>('graph')
+  const [result,      setResult]      = useState('')
+  const [loading,     setLoading]     = useState(false)
+  const [className,   setClassName]   = useState('')
+  const [view,        setView]        = useState<'text' | 'graph'>('graph')
+  const [detailLevel, setDetailLevel] = useState<'summary' | 'full'>('summary')
+  const [category,    setCategory]    = useState('')
+  const [query,       setQuery]       = useState('')
 
   async function run() {
     setLoading(true)
     try {
-      const res = await engineApi.ue5Gas(scriptsPath, className || undefined)
+      const res = await engineApi.ue5Gas(
+        scriptsPath,
+        className || undefined,
+        detailLevel,
+        category || undefined,
+        query || undefined,
+      )
       setResult(res)
     } catch (e: any) {
       setResult(`Error: ${e?.message ?? e}`)
@@ -1103,8 +1115,26 @@ function UE5GasTab({ scriptsPath }: { scriptsPath: string }) {
         </div>
         {view === 'text' && (
           <>
-            <input className="input text-sm w-48" placeholder={t('gas_class_filter_ph')}
+            {/* detail_level 토글 */}
+            <div className="flex gap-1">
+              {(['summary', 'full'] as const).map(lv => (
+                <button key={lv} onClick={() => setDetailLevel(lv)}
+                  className={`text-xs px-2 py-1 rounded border transition-colors
+                    ${detailLevel === lv
+                      ? 'border-violet-500 text-violet-400 bg-violet-950'
+                      : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}>
+                  {lv}
+                </button>
+              ))}
+            </div>
+            <input className="input text-sm w-32" placeholder="class filter"
               value={className} onChange={e => setClassName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && run()} />
+            <input className="input text-sm w-28" placeholder="tag prefix"
+              value={category} onChange={e => setCategory(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && run()} />
+            <input className="input text-sm w-28" placeholder="keyword"
+              value={query} onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && run()} />
             <button onClick={run} disabled={loading}
               className="btn-primary text-sm px-4 py-1.5 disabled:opacity-50">
@@ -1122,6 +1152,7 @@ function UE5GasTab({ scriptsPath }: { scriptsPath: string }) {
           ? <GasGraph scriptsPath={scriptsPath} />
           : (
             <div className="flex-1 overflow-y-auto h-full border-0 p-4">
+              {result && !loading && <div className="mb-2"><ConfidenceFromText text={result} /></div>}
               <MdResult text={result} loading={loading} />
             </div>
           )
@@ -1183,6 +1214,7 @@ function UE5AnimationTab({ scriptsPath }: { scriptsPath: string }) {
         <p className="text-xs text-gray-500">{t('anim_desc')}</p>
       </div>
       <div className="flex-1 overflow-y-auto border border-gray-800 rounded bg-gray-900/50 p-4">
+        {result && !loading && <div className="mb-2"><ConfidenceFromText text={result} /></div>}
         <MdResult text={result} loading={loading} />
       </div>
     </div>
@@ -1297,6 +1329,7 @@ function UE5BpMappingTab({ scriptsPath }: { scriptsPath: string }) {
         <p className="text-xs text-gray-500">{t('bp_map_desc')}</p>
       </div>
       <div className="flex-1 overflow-y-auto border border-gray-800 rounded bg-gray-900/50 p-4">
+        {result && !loading && <div className="mb-2"><ConfidenceFromText text={result} /></div>}
         <MdResult text={result} loading={loading} />
       </div>
     </div>
@@ -1588,6 +1621,7 @@ function AxmolEventsTab({ scriptsPath }: { scriptsPath: string }) {
         <p className="text-xs text-gray-500">{t('axmol_desc')}</p>
       </div>
       <div className="flex-1 overflow-y-auto border border-gray-800 rounded bg-gray-900/50 p-4">
+        {result && !loading && <div className="mb-2"><ConfidenceFromText text={result} /></div>}
         <MdResult text={result} loading={loading} />
       </div>
     </div>
@@ -1657,7 +1691,7 @@ export default function DependencyView() {
   const isAxmol  = !!(projectInfo?.engine?.startsWith('Axmol'))
   const isUnity  = projectInfo?.kind === 'UNITY'
   const isUnreal = projectInfo?.kind === 'UNREAL'
-  const isCpp    = projectInfo?.kind === 'CPP' && !isAxmol
+  const _isCpp   = projectInfo?.kind === 'CPP' && !isAxmol; void _isCpp
 
   if (!scriptsPath) return (
     <div className="flex items-center justify-center h-full text-gray-500">
