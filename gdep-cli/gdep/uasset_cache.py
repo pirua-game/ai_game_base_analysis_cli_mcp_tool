@@ -42,17 +42,23 @@ def _safe_key(cache_key: str) -> str:
 
 
 def load_cache(project_path: str, cache_key: str) -> dict | None:
-    """Load cached JSON object. Returns None if missing or corrupt."""
+    """Load cached JSON object. Returns None if missing, corrupt, or version mismatch."""
+    from . import __version__
     path = _cache_dir(project_path) / f"{_safe_key(cache_key)}.json"
     try:
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        if data.get("_gdep_ver", "") != __version__:
+            return None  # gdep 버전 불일치 → 무효화
+        return data
     except Exception:
         return None
 
 
 def save_cache(project_path: str, cache_key: str, data: dict) -> None:
-    """Persist data dict as JSON cache. Silently ignores write errors."""
+    """Persist data dict as JSON cache with gdep version. Silently ignores write errors."""
+    from . import __version__
+    data["_gdep_ver"] = __version__
     d = _cache_dir(project_path)
     try:
         d.mkdir(parents=True, exist_ok=True)

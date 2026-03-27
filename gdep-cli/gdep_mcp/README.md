@@ -57,7 +57,7 @@ pip install gdep "mcp[cli]"
 
 ---
 
-## 🛠 Available Tools (19)
+## 🛠 Available Tools (21)
 
 ### Context Tool — call first at session start
 
@@ -65,19 +65,21 @@ pip install gdep "mcp[cli]"
 |------|-------------|
 | `get_project_context` | Full project overview. Reads `.gdep/AGENTS.md` if present, otherwise generates on-the-fly |
 
-### High-level Intent Tools (9)
+### High-level Intent Tools (11)
 
 | Tool | Description |
 |------|-------------|
 | `analyze_impact_and_risk` | Impact scope + lint before modifying a class or method. `method_name=` for method-level callers; `detail_level="summary"` for a quick count; `query=` to filter results |
 | `explain_method_logic` | Summarize internal control flow of a single method — Guard / Branch / Loop / Always in 5–10 lines. Supports C++ namespace-style functions |
-| `trace_gameplay_flow` | Method call chain + source code |
+| `trace_gameplay_flow` | Method call chain + source code. `summary=True` for compact 2-level tree (saves tokens) |
 | `inspect_architectural_health` | Coupling / circular deps / dead code / anti-patterns |
 | `explore_class_semantics` | Class structure + AI 3-line summary |
 | `suggest_test_scope` | Test files to run after modifying a class (pattern-based, CI-ready JSON output) |
 | `suggest_lint_fixes` | Lint issues with concrete code fix suggestions (dry-run, no file changes) |
 | `summarize_project_diff` | Architecture-level summary of a git diff — new cycles, high-coupling changes |
 | `get_architecture_advice` | Full project scan + lint + impact → structured report or LLM-powered advice |
+| `find_method_callers` | Reverse call graph — all methods that call a specific method |
+| `find_call_path` | Shortest call path between two methods (A → B, **C#/Unity only**) |
 
 ### Raw CLI Access (1)
 
@@ -145,6 +147,15 @@ pip install gdep "mcp[cli]"
 
 "Who handles the jump event in this Axmol project?"
 → analyze_axmol_events
+
+"Who calls the PlayHand method?"
+→ find_method_callers(path, "ManagerBattle", "PlayHand")
+
+"How does UIBattle.OnClick reach ManagerBattle.PlayHand?"
+→ find_call_path(path, "UIBattle", "OnClick", "ManagerBattle", "PlayHand")
+
+"Give me a quick summary of the PlayHand flow without all the details"
+→ trace_gameplay_flow(path, "ManagerBattle", "PlayHand", summary=True)
 
 "How many GAS abilities are there? What are the Blueprint implementations?"
 → analyze_ue5_gas + analyze_ue5_blueprint_mapping

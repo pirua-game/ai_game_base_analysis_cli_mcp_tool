@@ -61,7 +61,7 @@ npm install -g gdep-mcp
 }
 ```
 
-That's it. Your AI now has **19** game-engine-aware tools available on every conversation.
+That's it. Your AI now has **21** game-engine-aware tools available on every conversation.
 
 ### What changes with MCP
 
@@ -70,20 +70,22 @@ Without gdep:  "CombatCore probably has some Manager dependencies..." ← halluc
 With gdep:     Direct deps: 2 · Indirect: 200+ UI classes · Asset: prefabs/UI/combat.prefab
 ```
 
-### 19 MCP Tools at a glance
+### 21 MCP Tools at a glance
 
 | Tool | When to use |
 |------|-------------|
 | `get_project_context` | **Always call first** — full project overview |
 | `analyze_impact_and_risk` | Before modifying any class or method (`method_name=` for method-level callers; `detail_level="summary"` for quick count) |
 | `explain_method_logic` | Internal control flow of a single method — Guard/Branch/Loop/Always. Supports C++ namespace-style functions |
-| `trace_gameplay_flow` | Trace C++ → Blueprint call chains |
+| `trace_gameplay_flow` | Trace C++ → Blueprint call chains (`summary=True` for compact output) |
 | `inspect_architectural_health` | Tech debt audit |
 | `explore_class_semantics` | Unfamiliar class deep-dive |
 | `suggest_test_scope` | Which test files to run after modifying a class |
 | `suggest_lint_fixes` | Lint issues with code fix suggestions (dry-run) |
 | `summarize_project_diff` | Architecture-level summary of a git diff |
 | `get_architecture_advice` | Full project diagnosis + LLM-powered advice |
+| `find_method_callers` | Reverse call graph — who calls this method |
+| `find_call_path` | Shortest call path between two methods (A → B, **C#/Unity only**) |
 | `execute_gdep_cli` | Raw access to all CLI features |
 | `find_unity_event_bindings` | Inspector-wired methods (invisible in code search) |
 | `analyze_unity_animator` | Animator state machine structure |
@@ -195,6 +197,7 @@ Full documentation → [gdep-cli/web/README.md](./gdep-cli/web/README.md)
 | `flow` | Method call chain (C++→BP boundary) | Bug tracing, flow analysis |
 | `impact` | Change impact reverse-trace | Safety check before refactoring |
 | `method-impact` | Reverse-trace callers of a specific method | Before modifying a method, find all call sites |
+| `path` | Shortest call path between two methods (BFS, **C#/Unity only**) | Trace how A connects to B |
 | `test-scope` | Test files to run after modifying a class | Before merging, CI planning |
 | `watch` | Live file-change monitor (impact+test+lint) | During active development |
 | `lint` | Game-specific anti-pattern scan (+ `--fix`) | Quality check before PR |

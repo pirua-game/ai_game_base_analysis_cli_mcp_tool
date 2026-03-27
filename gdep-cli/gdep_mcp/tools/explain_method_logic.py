@@ -42,12 +42,19 @@ def run(project_path: str, class_name: str, method_name: str) -> str:
                 return (
                     f"[explain_method_logic] Could not find source for `{class_name}`."
                 )
-            # Concatenate all chunks (partial classes)
-            source = "\n".join(chunk.content for chunk in cs_result.chunks)
+            # Concatenate all chunks (partial classes), tracking offsets
+            chunk_offsets: list[tuple[int, int, int]] = []  # (start, end, chunk_idx)
+            parts: list[str] = []
+            offset = 0
+            for idx, chunk in enumerate(cs_result.chunks):
+                chunk_offsets.append((offset, offset + len(chunk.content), idx))
+                parts.append(chunk.content)
+                offset += len(chunk.content) + 1  # +1 for \n separator
+            source = "\n".join(parts)
 
-        body = _extract_cpp_method(source, method_name) if is_cpp else _extract_cs_method(source, method_name)
+        result = _extract_cpp_method(source, method_name) if is_cpp else _extract_cs_method(source, method_name)
 
-        if body is None:
+        if result is None:
             suggestions = _find_method_elsewhere(project_path, profile, method_name, is_cpp)
             if suggestions:
                 suggest_str = ", ".join(f"`{s}`" for s in suggestions[:5])
@@ -61,9 +68,10 @@ def run(project_path: str, class_name: str, method_name: str) -> str:
                 f"Tip: check the exact method name spelling or that the source file was found."
             )
 
+        body, match_pos = result
         items = _parse_control_flow(body)
 
-        # Resolve file reference from source header (cpp) or chunk path (cs)
+        # Resolve file reference from source header (cpp) or chunk offset (cs)
         file_ref = ""
         if is_cpp:
             for line in source.split("\n")[:6]:
@@ -71,9 +79,13 @@ def run(project_path: str, class_name: str, method_name: str) -> str:
                     file_ref = line.strip().lstrip("#").strip()
                     break
         else:
-            if cs_result.chunks:
-                from pathlib import Path as _Path
-                file_ref = _Path(cs_result.chunks[0].file_path).name
+            if cs_result.chunks and chunk_offsets:
+                for (cstart, cend, cidx) in chunk_offsets:
+                    if cstart <= match_pos < cend:
+                        file_ref = Path(cs_result.chunks[cidx].file_path).name
+                        break
+                if not file_ref:
+                    file_ref = Path(cs_result.chunks[0].file_path).name
 
         lines = [
             f"## Method: {class_name}.{method_name}",
@@ -100,13 +112,14 @@ def run(project_path: str, class_name: str, method_name: str) -> str:
 
 # ── Method body extractors ─────────────────────────────────────
 
-def _extract_cpp_method(source: str, method_name: str) -> str | None:
-    """Extract C++ method body via cpp_flow utility, falling back to regex."""
+def _extract_cpp_method(source: str, method_name: str) -> tuple[str, int] | None:
+    """Extract C++ method body via cpp_flow utility, falling back to regex.
+    Returns (body_text, match_start_position) or None."""
     try:
         from gdep.cpp_flow import _extract_function_body
         result = _extract_function_body(source, method_name)
         if result is not None:
-            return result
+            return (result, 0)
     except Exception:
         pass
 
@@ -126,11 +139,13 @@ def _extract_cpp_method(source: str, method_name: str) -> str | None:
     if not m:
         return None
     start = source.index("{", m.start())
-    return _extract_brace_body(source, start)
+    body = _extract_brace_body(source, start)
+    return (body, m.start()) if body else None
 
 
-def _extract_cs_method(source: str, method_name: str) -> str | None:
-    """Extract C# method body via regex."""
+def _extract_cs_method(source: str, method_name: str) -> tuple[str, int] | None:
+    """Extract C# method body via regex.
+    Returns (body_text, match_start_position) or None."""
     pat = re.compile(
         r'(?:(?:public|private|protected|internal|static|virtual|override|async|sealed|abstract|new)\s+)*'
         r'[\w<>\[\],\s]+\s+' + re.escape(method_name) + r'\s*\([^)]*\)\s*(?:\w+[^{]*?)?\{',
@@ -144,7 +159,8 @@ def _extract_cs_method(source: str, method_name: str) -> str | None:
         if not m:
             return None
     start = source.index("{", m.start())
-    return _extract_brace_body(source, start)
+    body = _extract_brace_body(source, start)
+    return (body, m.start()) if body else None
 
 
 def _extract_brace_body(text: str, brace_start: int) -> str | None:

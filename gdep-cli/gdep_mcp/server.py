@@ -48,6 +48,8 @@ from gdep_mcp.tools.suggest_lint_fixes import run as _lint_fixes_run
 from gdep_mcp.tools.summarize_project_diff import run as _diff_summary_run
 from gdep_mcp.tools.analyze_axmol_events import run as _axmol_events_run
 from gdep_mcp.tools.explain_method_logic import run as _explain_logic_run
+from gdep_mcp.tools.find_method_callers import run as _callers_run
+from gdep_mcp.tools.find_call_path import run as _path_run
 
 # ── 추가 분석 모듈 (3~7단계 기능) — 로드 실패해도 서버는 기동됨 ──
 try:
@@ -164,7 +166,8 @@ def trace_gameplay_flow(project_path: str,
                          class_name: str,
                          method_name: str,
                          depth: int = 5,
-                         include_source: bool = True) -> str:
+                         include_source: bool = True,
+                         summary: bool = False) -> str:
 
     """
     Trace a method's full call chain and show relevant source code.
@@ -186,8 +189,10 @@ def trace_gameplay_flow(project_path: str,
         method_name:    Entry-point method. E.g. "PlayHand", "BeginPlay", "ActivateAbility"
         depth:          Tracing depth (default 4, max recommended 6).
         include_source: Append source code of entry class (default True).
+        summary:        Compact 2-level tree with stats. Saves tokens for agent use.
+                        When True, include_source is forced False.
     """
-    return _flow_run(project_path, class_name, method_name, depth, include_source)
+    return _flow_run(project_path, class_name, method_name, depth, include_source, summary)
 
 
 @mcp.tool()
@@ -453,7 +458,7 @@ def find_unity_event_bindings(project_path: str,
     try:
         from gdep.unity_event_refs import build_event_map, format_event_result
         event_map = build_event_map(project_path)
-        return format_event_result(event_map, method_name) + confidence_footer(ConfidenceTier.MEDIUM, "prefab/scene YAML parsing")
+        return format_event_result(event_map, method_name) + confidence_footer(ConfidenceTier.HIGH, "Unity persistent-call YAML parsing")
     except Exception as e:
         return f"[find_unity_event_bindings] Error: {e}"
 
@@ -792,6 +797,57 @@ def explain_method_logic(project_path: str, class_name: str, method_name: str) -
         method_name:  Method to explain. E.g. "PlayHand", "ActivateAbility", "BeginPlay"
     """
     return _explain_logic_run(project_path, class_name, method_name)
+
+
+@mcp.tool()
+def find_method_callers(project_path: str, class_name: str, method_name: str) -> str:
+    """
+    Find all methods that call a specific method (reverse call graph).
+
+    USE THIS TOOL WHEN:
+    - User asks "who calls this method?"
+    - User asks "what will break if I change method X?"
+    - User wants to understand the blast radius of a method change
+    - User wants to find all entry points that lead to a specific method
+
+    Returns:
+    - List of CallerClass::CallerMethod with call conditions
+    - Caller count
+
+    Args:
+        project_path: Absolute path to Scripts/Source folder.
+        class_name:   Class containing the method. E.g. "ManagerBattle"
+        method_name:  Method to find callers of. E.g. "PlayHand"
+    """
+    return _callers_run(project_path, class_name, method_name)
+
+
+@mcp.tool()
+def find_call_path(project_path: str, from_class: str, from_method: str,
+                   to_class: str, to_method: str, depth: int = 10) -> str:
+    """
+    Find the shortest call path between two methods (A to B connection trace).
+    **C#/Unity projects only** — C++ and UE5 projects are not supported yet.
+
+    USE THIS TOOL WHEN:
+    - User asks "how does A connect to B?"
+    - User asks "does method X eventually call method Y?"
+    - User wants to trace a UI event to a backend method
+    - User wants to understand how an entry point reaches a specific logic
+
+    Returns:
+    - Step-by-step call path: A.m1 → B.m2 [condition] → C.m3
+    - Or "No path found" if methods are not connected
+
+    Args:
+        project_path: Absolute path to Scripts/Source folder.
+        from_class:   Source class. E.g. "UIBattle"
+        from_method:  Source method. E.g. "OnClickPlayingCard"
+        to_class:     Target class. E.g. "ManagerBattle"
+        to_method:    Target method. E.g. "PlayHand"
+        depth:        Max search depth (default 10).
+    """
+    return _path_run(project_path, from_class, from_method, to_class, to_method, depth)
 
 
 # ════════════════════════════════════════════════════════════════

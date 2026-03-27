@@ -1117,8 +1117,12 @@ def init(path, force):
     agents_md = Path(profile.root) / ".gdep" / "AGENTS.md"
 
     if agents_md.exists() and not force:
-        _safe_echo(f"[WARN] {agents_md} already exists. Use --force to overwrite.", fg="yellow")
-        return
+        from .init_context import _is_agents_md_fresh
+        if _is_agents_md_fresh(profile):
+            _safe_echo(f"[OK] {agents_md} is up-to-date (fingerprint matches).", fg="green")
+            return
+        _safe_echo("[INFO] Stale AGENTS.md detected — auto-refreshing...", fg="cyan")
+        force = True
 
     _safe_echo(f"► init  [{profile.display}]  {profile.root}", fg="cyan")
     click.echo("  Analyzing project...")

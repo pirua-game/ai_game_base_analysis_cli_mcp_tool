@@ -69,8 +69,11 @@ if (args[0] == "describe")
     var format         = ParseStringOption(args, "--format") ?? "console";
     var outputFile     = ParseStringOption(args, "--output");
     var ignorePatterns = ParseMultiOption(args, "--ignore");
+    var maxFields      = ParseIntOption(args, "--max-fields", 80);
+    var maxMethods     = ParseIntOption(args, "--max-methods", 150);
     new DescribeCommand().Execute(path, className, outputFile,
-        format: format, skipProto: !includeProto, ignorePatterns: ignorePatterns);
+        format: format, skipProto: !includeProto, ignorePatterns: ignorePatterns,
+        maxFields: maxFields, maxMethods: maxMethods);
     return 0;
 }
 
@@ -100,6 +103,30 @@ if (args[0] == "flow")
         maxDepth: depth, format: format, outputFile: outputFile,
         skipProto: !includeProto, ignorePatterns: ignorePatterns,
         focusClasses: focusClasses.Length > 0 ? focusClasses : null);
+    return 0;
+}
+
+// ── path ──────────────────────────────────────────────────────
+if (args[0] == "path")
+{
+    if (args.Length < 2) { Console.WriteLine("Usage: gdep path <path> --from Class.Method --to Class.Method [--depth N]"); return 1; }
+    var path  = args[1];
+    var from  = ParseStringOption(args, "--from") ?? "";
+    var to    = ParseStringOption(args, "--to")   ?? "";
+    var depth = ParseIntOption(args, "--depth", 10);
+    if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
+    {
+        Console.WriteLine("Both --from and --to are required. Format: Class.Method");
+        return 1;
+    }
+    var fromParts = from.Split('.', 2);
+    var toParts   = to.Split('.', 2);
+    if (fromParts.Length < 2 || toParts.Length < 2)
+    {
+        Console.WriteLine("Format: --from ClassName.MethodName --to ClassName.MethodName");
+        return 1;
+    }
+    new PathCommand().Execute(path, fromParts[0], fromParts[1], toParts[0], toParts[1], depth);
     return 0;
 }
 

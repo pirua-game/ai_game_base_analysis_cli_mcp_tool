@@ -287,6 +287,29 @@ public class MethodCallAnalyzer
             var (targetClass, targetMethod, isDynamic) = ResolveInvocation(inv, className);
 
             if (targetMethod == null) continue;
+
+            // Distinguish delegate?.Invoke() from Unity MonoBehaviour.Invoke("string")
+            if (targetMethod == "Invoke")
+            {
+                if (inv.Expression is ConditionalAccessExpressionSyntax)
+                {
+                    // delegate?.Invoke(...) — event dispatch, keep and mark dynamic
+                    isDynamic = true;
+                }
+                else if (inv.ArgumentList.Arguments.Count >= 1
+                    && inv.ArgumentList.Arguments[0].Expression
+                        is LiteralExpressionSyntax { Token: { Value: string } })
+                {
+                    // Unity-style Invoke("methodName", delay) — skip as noise
+                    continue;
+                }
+                else
+                {
+                    // Other .Invoke() patterns — treat as event dispatch
+                    isDynamic = true;
+                }
+            }
+
             if (IsNoisyCall(targetMethod)) continue;
             if (targetClass != null && IsNoisyClass(targetClass)) continue;
 
@@ -368,8 +391,9 @@ public class MethodCallAnalyzer
     }
 
     private string? ResolveReceiver(ExpressionSyntax receiver, string currentClass,
-        InvocationExpressionSyntax? context = null)
+        InvocationExpressionSyntax? context = null, int depth = 20)
     {
+        if (depth <= 0) return null;
         switch (receiver)
         {
             case ThisExpressionSyntax:
@@ -394,7 +418,7 @@ public class MethodCallAnalyzer
             case MemberAccessExpressionSyntax chainedAccess:
             {
                 var propName = chainedAccess.Name.Identifier.Text;
-                var baseType = ResolveReceiver(chainedAccess.Expression, currentClass);
+                var baseType = ResolveReceiver(chainedAccess.Expression, currentClass, depth: depth - 1);
                 if (baseType == null) return null;
 
                 // baseType의 propName 프로퍼티 타입 조회
@@ -421,10 +445,10 @@ public class MethodCallAnalyzer
             }
 
             case ConditionalAccessExpressionSyntax cond:
-                return ResolveReceiver(cond.Expression, currentClass);
+                return ResolveReceiver(cond.Expression, currentClass, depth: depth - 1);
 
             case ParenthesizedExpressionSyntax paren:
-                return ResolveReceiver(paren.Expression, currentClass);
+                return ResolveReceiver(paren.Expression, currentClass, depth: depth - 1);
 
             case CastExpressionSyntax cast:
             {
@@ -443,7 +467,7 @@ public class MethodCallAnalyzer
                     .FirstOrDefault();
                 if (condAccess == null) return null;
 
-                var baseType = ResolveReceiver(condAccess.Expression, currentClass);
+                var baseType = ResolveReceiver(condAccess.Expression, currentClass, depth: depth - 1);
                 if (baseType == null) return null;
 
                 var propType = _index.ResolveFieldType(baseType, propName);
@@ -481,7 +505,16 @@ public class MethodCallAnalyzer
             {
                 var cond = ifStmt.Condition.ToString();
                 if (cond.Length > 80) cond = cond[..77] + "...";
-                return $"if: {cond}";
+
+                // else 블록 안에 있으면 조건 부정
+                bool inElse = false;
+                if (ifStmt.Else != null)
+                {
+                    var elseSpan = ifStmt.Else.Statement.Span;
+                    if (elseSpan.Contains(inv.SpanStart))
+                        inElse = true;
+                }
+                return inElse ? $"if: !({cond})" : $"if: {cond}";
             }
             if (ancestor is SwitchStatementSyntax switchStmt)
             {
@@ -560,6 +593,91 @@ public class MethodCallAnalyzer
             .OrderBy(c => c.CallerClass)
             .ThenBy(c => c.CallerMethod)
             .ToList();
+    }
+
+    /// <summary>
+    /// BFS로 sourceClass.sourceMethod → targetClass.targetMethod 최단 호출 경로를 탐색한다.
+    /// </summary>
+    public List<(string ClassName, string MethodName, string? Condition)>? FindPath(
+        string sourceClass, string sourceMethod,
+        string targetClass, string targetMethod,
+        int maxDepth = 10)
+    {
+        var sourceId = $"{sourceClass}.{sourceMethod}";
+        var targetId = $"{targetClass}.{targetMethod}";
+
+        if (sourceId == targetId) return new() { (sourceClass, sourceMethod, null) };
+
+        // BFS state
+        var queue  = new Queue<(string cls, string method, int depth)>();
+        var parent = new Dictionary<string, (string parentId, string? condition)>();
+        var visited = new HashSet<string>();
+
+        queue.Enqueue((sourceClass, sourceMethod, 0));
+        visited.Add(sourceId);
+        parent[sourceId] = ("", null);
+
+        while (queue.Count > 0)
+        {
+            var (cls, method, depth) = queue.Dequeue();
+            if (depth >= maxDepth) continue;
+
+            var key = (cls, method);
+            if (!_index.Methods.TryGetValue(key, out var methodList)) continue;
+
+            foreach (var m in methodList)
+            {
+                if (m.Body == null && m.ExpressionBody == null) continue;
+                SyntaxNode bodyRoot = (SyntaxNode?)m.Body ?? m.ExpressionBody!;
+
+                foreach (var inv in bodyRoot.DescendantNodes()
+                                            .OfType<InvocationExpressionSyntax>())
+                {
+                    var (resolvedClass, resolvedMethod, _) = ResolveInvocation(inv, cls);
+                    if (resolvedMethod == null) continue;
+                    if (IsNoisyCall(resolvedMethod)) continue;
+                    if (resolvedClass != null && IsNoisyClass(resolvedClass)) continue;
+
+                    var calleeClass = resolvedClass ?? cls;
+                    var calleeId = $"{calleeClass}.{resolvedMethod}";
+
+                    if (!visited.Add(calleeId)) continue;
+
+                    var condition = ExtractConditionContext(inv);
+                    var fromId = $"{cls}.{method}";
+                    parent[calleeId] = (fromId, condition);
+
+                    // Target reached — reconstruct path
+                    if (calleeClass == targetClass && resolvedMethod == targetMethod)
+                    {
+                        return ReconstructPath(sourceId, calleeId, parent);
+                    }
+
+                    queue.Enqueue((calleeClass, resolvedMethod, depth + 1));
+                }
+            }
+        }
+
+        return null; // no path found
+    }
+
+    private static List<(string ClassName, string MethodName, string? Condition)> ReconstructPath(
+        string sourceId, string targetId,
+        Dictionary<string, (string parentId, string? condition)> parent)
+    {
+        var path = new List<(string ClassName, string MethodName, string? Condition)>();
+        var current = targetId;
+
+        while (current != "")
+        {
+            var parts = current.Split('.', 2);
+            var (parentId, condition) = parent[current];
+            path.Add((parts[0], parts.Length > 1 ? parts[1] : current, current == sourceId ? null : condition));
+            current = parentId;
+        }
+
+        path.Reverse();
+        return path;
     }
 
     public IReadOnlyDictionary<string, Dictionary<string, string>> GetStaticAccessors()
@@ -670,8 +788,8 @@ public class MethodCallAnalyzer
         "GetInt", "GetFloat", "GetString",   // PlayerPrefs
         "SetInt", "SetFloat", "SetString",
         "HasKey", "DeleteKey", "DeleteAll", "Save",
-        // Invoke / 이벤트
-        "Invoke", "InvokeRepeating", "CancelInvoke",
+        // Invoke / 이벤트 — "Invoke" 제외 (delegate?.Invoke() 와 구분 필요)
+        "InvokeRepeating", "CancelInvoke",
     };
 
     private bool IsNoisyCall(string methodName) =>

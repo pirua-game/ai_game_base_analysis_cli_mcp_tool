@@ -85,6 +85,7 @@ gdep init {path}
 | `flow` | Method call chain trace (C++→BP boundary) | Bug tracing, flow analysis |
 | `impact` | Change impact reverse-trace | Safety check before refactoring |
 | `method-impact` | Reverse-trace callers of a specific method | Before modifying a method, find all call sites |
+| `path` | Shortest call path between two methods (BFS, **C#/Unity only**) | Trace how A connects to B |
 | `lint` | Game-specific anti-pattern scan | Quality check before PR |
 | `graph` | Dependency graph export | Documentation, visualization |
 | `diff` | Dependency diff before/after git commit | PR review, CI gate |
@@ -118,15 +119,22 @@ Claude Desktop config (`claude_desktop_config.json`):
 }
 ```
 
-### MCP Tools (13)
+### MCP Tools (21)
 
 | Tool | Scenario |
 |------|----------|
 | `get_project_context` | **Call first** — full project overview |
 | `analyze_impact_and_risk` | Safety check before modifying a class or method (`method_name=` for method-level callers) |
-| `trace_gameplay_flow` | Trace how a feature works (C++→BP) |
+| `trace_gameplay_flow` | Trace how a feature works (C++→BP). `summary=True` for compact output |
 | `inspect_architectural_health` | Full tech debt diagnosis |
 | `explore_class_semantics` | Understand an unfamiliar class |
+| `explain_method_logic` | Internal control flow of a single method (Guard/Branch/Loop/Always) |
+| `suggest_test_scope` | Which test files to run after modifying a class |
+| `suggest_lint_fixes` | Lint issues with code fix suggestions (dry-run) |
+| `summarize_project_diff` | Architecture-level summary of a git diff |
+| `get_architecture_advice` | Full project diagnosis + LLM-powered advice |
+| `find_method_callers` | Reverse call graph — who calls this method |
+| `find_call_path` | Shortest call path between two methods (A → B, **C#/Unity only**) |
 | `execute_gdep_cli` | Raw access to all CLI features |
 | `find_unity_event_bindings` | Unity Inspector event bindings |
 | `analyze_unity_animator` | Unity Animator state machine |

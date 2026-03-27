@@ -242,13 +242,15 @@ def _cs_cache_path(profile: "ProjectProfile") -> Path:
 
 
 def _load_cs_cache(profile: "ProjectProfile") -> dict | None:
+    from . import __version__
     cp = _cs_cache_path(profile)
     if not cp.exists():
         return None
     try:
         data = json.loads(cp.read_text(encoding="utf-8"))
         src = _src(profile)
-        if data.get("fingerprint") == _cs_fingerprint(src):
+        if (data.get("fingerprint") == _cs_fingerprint(src)
+                and data.get("gdep_version", "") == __version__):
             return data.get("scan_result")
     except Exception:
         pass
@@ -256,11 +258,13 @@ def _load_cs_cache(profile: "ProjectProfile") -> dict | None:
 
 
 def _save_cs_cache(profile: "ProjectProfile", scan_result: dict) -> None:
+    from . import __version__
     try:
         cp = _cs_cache_path(profile)
         src = _src(profile)
         payload = {
             "fingerprint": _cs_fingerprint(src),
+            "gdep_version": __version__,
             "saved_at": time.time(),
             "scan_result": scan_result,
         }
@@ -439,7 +443,8 @@ def describe(profile: ProjectProfile, class_name: str,
             from . import cpp_runner
             result = cpp_runner.describe(_src(profile), class_name)
     else:
-        result = run(["describe", _src(profile), class_name, "--format", fmt])
+        result = run(["describe", _src(profile), class_name, "--format", fmt,
+                      "--max-fields", "80", "--max-methods", "150"])
 
     if not result.ok:
         return result
@@ -537,6 +542,18 @@ def method_impact(profile: ProjectProfile, target_class: str,
                                        target_method, depth=depth)
     # C#: Roslyn 기반 gdep method-impact 커맨드 사용
     return run(["method-impact", _src(profile), target_class, target_method])
+
+
+def path(profile: ProjectProfile, from_class: str, from_method: str,
+         to_class: str, to_method: str, depth: int = 10) -> RunResult:
+    """Find shortest call path from source to target method."""
+    if _is_cpp(profile):
+        return RunResult(ok=False, stdout="",
+                         stderr="`path` command only supports C# projects currently.")
+    return run(["path", _src(profile),
+                "--from", f"{from_class}.{from_method}",
+                "--to", f"{to_class}.{to_method}",
+                "--depth", str(depth)])
 
 
 def graph(profile: ProjectProfile, fmt: str = "mermaid",

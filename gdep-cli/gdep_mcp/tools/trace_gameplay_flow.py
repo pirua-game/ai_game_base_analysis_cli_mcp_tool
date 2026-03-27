@@ -20,7 +20,8 @@ from gdep.detector import detect
 
 
 def run(project_path: str, class_name: str, method_name: str,
-        depth: int = 4, include_source: bool = True) -> str:
+        depth: int = 4, include_source: bool = True,
+        summary: bool = False) -> str:
     """
     Trace the full execution flow of a gameplay method and show relevant source code.
 
@@ -39,10 +40,14 @@ def run(project_path: str, class_name: str, method_name: str,
         depth:          How many call levels to trace. Default: 4. Max recommended: 6.
         include_source: If True, appends source code of the entry-point class.
                         Set False to get only the flow tree (faster).
+        summary:        If True, returns a compact 2-level tree with statistics
+                        instead of the full tree. Saves tokens for agent use.
 
     Returns:
         A structured call flow tree followed by relevant source code excerpts.
     """
+    if summary:
+        include_source = False
     try:
         profile = detect(project_path)
         sections: list[str] = []
@@ -68,13 +73,28 @@ def run(project_path: str, class_name: str, method_name: str,
                 # Format as readable tree text
                 # Use entryClass from JSON (may differ from input if class name was normalized)
                 actual_class = data.get("entryClass", class_name)
-                sections.append(_render_flow_tree(nodes, edges, actual_class, method_name))
 
-                dispatches = data.get("dispatches", [])
-                if dispatches:
-                    sections.append("\n### Dynamic Dispatches")
-                    for d in dispatches:
-                        sections.append(f"  ⇢ {d.get('handler', '?')}  (from {d.get('from','?')})")
+                if summary:
+                    sections.append(_render_summary(nodes, edges, actual_class, method_name))
+                else:
+                    sections.append(_render_flow_tree(nodes, edges, actual_class, method_name))
+
+                    dispatches = data.get("dispatches", [])
+                    if dispatches:
+                        sections.append("\n### Dynamic Dispatches")
+                        for d in dispatches:
+                            sections.append(f"  ⇢ {d.get('handler', '?')}  (from {d.get('from','?')})")
+
+                    switch_dispatches = data.get("switchDispatches", [])
+                    if switch_dispatches:
+                        sections.append("\n### Switch Dispatches")
+                        for sd in switch_dispatches:
+                            expr = sd.get("switchExpression", "?")
+                            frm = sd.get("fromMethod", "?")
+                            targets = sd.get("caseTargets", [])
+                            sections.append(f"  switch ({expr})  in {frm}:")
+                            for t in targets:
+                                sections.append(f"    → {t}")
             except (json.JSONDecodeError, TypeError):
                 # Fallback: raw console output
                 flow_console = runner.flow(profile, class_name, method_name,
@@ -156,4 +176,52 @@ def _render_flow_tree(nodes: list, edges: list, root_class: str, root_method: st
     for i, child_id in enumerate(children.get(entry_id, [])):
         _walk(child_id, "    ", i == len(children[entry_id]) - 1, entry_id)
 
+    return "\n".join(lines)
+
+
+def _render_summary(nodes: list, edges: list, root_class: str, root_method: str) -> str:
+    """JSON nodes+edges → compact 2-level tree + statistics."""
+    if not nodes:
+        return "  (No call nodes found — method may be empty or not parsed)"
+
+    children: dict[str, list[str]] = {n["id"]: [] for n in nodes}
+    for e in edges:
+        frm, to = e.get("from", ""), e.get("to", "")
+        if frm in children:
+            children[frm].append(to)
+
+    node_map = {n["id"]: n for n in nodes}
+    entry_id = f"{root_class}.{root_method}"
+    leaves = [n for n in nodes if n.get("isLeaf")]
+    leaf_names = sorted({n.get("method", n["id"].split(".")[-1]) for n in leaves})
+
+    lines: list[str] = [f"└── {root_class}.{root_method}"]
+    level1 = children.get(entry_id, [])
+    for i, child_id in enumerate(level1):
+        node = node_map.get(child_id)
+        if node is None:
+            continue
+        label = node.get("method", child_id.split(".")[-1])
+        cls = node.get("class", "")
+        display = f"{cls}.{label}" if cls and cls != root_class else label
+        is_last = i == len(level1) - 1
+        connector = "└── " if is_last else "├── "
+        lines.append(f"    {connector}{display}")
+        # Level 2 children (grandchildren)
+        level2 = [k for k in children.get(child_id, []) if k != child_id]
+        for j, gchild_id in enumerate(level2):
+            gnode = node_map.get(gchild_id)
+            if gnode is None:
+                continue
+            glabel = gnode.get("method", gchild_id.split(".")[-1])
+            gcls = gnode.get("class", "")
+            gdisplay = f"{gcls}.{glabel}" if gcls and gcls != root_class else glabel
+            gis_last = j == len(level2) - 1
+            gconnector = "└── " if gis_last else "├── "
+            indent = "        " if is_last else "    │   "
+            lines.append(f"{indent}{gconnector}{gdisplay}")
+
+    lines.append("---")
+    lines.append(f"Total: {len(nodes)} nodes | Leaves: {', '.join(leaf_names[:15])}"
+                 + (f" ... +{len(leaf_names) - 15} more" if len(leaf_names) > 15 else ""))
     return "\n".join(lines)

@@ -7,10 +7,12 @@ gdep init / gdep context 커맨드 구현.
 """
 from __future__ import annotations
 
+import json
+import time
 from datetime import datetime
 from pathlib import Path
 
-from . import runner
+from . import __version__, runner
 from .detector import ProjectKind, detect
 
 # ─────────────────────────────────────────────────────────────
@@ -60,10 +62,38 @@ have to read every file.
 4. **For a complete list of all tools and parameters,
    read `.gdep/HELP.md`** (generated alongside this file).
 
-5. **Cache & freshness:** Individual tool results auto-invalidate when source files
-   (.h/.cpp/.cs) or assets (.uasset) change. However, **this AGENTS.md file is a
-   static snapshot** — regenerate it after major structural changes (new classes,
-   new Blueprints, GAS tag changes): `gdep init <project_path> --force`
+5. **Output volume control:** Some tools offer summary vs full output modes.
+   Use summary mode first to save tokens, then request full output only when needed.
+   - `trace_gameplay_flow(summary=True)` — compact 2-level tree + stats (< 500 tokens).
+     Full mode can produce 2000+ tokens at depth 5.
+   - `analyze_impact_and_risk(detail_level="summary")` — quick count vs full blast-radius.
+   - `analyze_ue5_gas(detail_level="summary")` — overview vs full tag/ability listing.
+   - `find_method_callers` — always returns concise, structured output.
+   - `find_call_path` — concise path output (**C#/Unity only**).
+
+6. **Cache & freshness — you can trust gdep results.**
+   gdep uses a multi-layer cache invalidation system:
+
+   - **Tool results** (trace, callers, scan, GAS, BP, etc.):
+     Auto-invalidated by MD5 fingerprint of source file mtimes.
+     If any `.cs`, `.h`, `.cpp`, `.uasset`, or `.umap` file is modified,
+     the next tool call automatically rescans — no manual action needed.
+
+   - **This AGENTS.md file**:
+     Auto-refreshed when `get_project_context` detects source file changes
+     or a gdep version update. No manual `--force` required.
+     Freshness is checked via `.gdep/.agents_meta.json` (fingerprint + version).
+
+   - **gdep version check**:
+     All caches embed the gdep version (`_gdep_ver`) that created them.
+     When gdep is updated, caches from the old version are automatically
+     invalidated on next use — ensuring parser/format changes are picked up.
+
+   - **LLM summaries** (`explore_class_semantics`):
+     Per-class file cache. Use `refresh=True` to force regeneration.
+
+   **Manual refresh:** `gdep init <project_path> --force`
+   (only needed if auto-detection misses edge cases).
 
 """
 
@@ -75,7 +105,7 @@ have to read every file.
 _QUICK_REF_COMMON = """\
 ## Quick Reference
 Common: `explore_class_semantics` · `trace_gameplay_flow` · `analyze_impact_and_risk` · `inspect_architectural_health` · `get_architecture_advice` · `explain_method_logic` · `suggest_lint_fixes` · `summarize_project_diff`
-Method-level: `analyze_impact_and_risk(path, cls, method_name=m)` — callers of a specific method · `execute_gdep_cli(["method-impact", path, cls, m])` — raw CLI
+Method-level: `find_method_callers(path, cls, method)` — who calls this method · `find_call_path(path, fromCls, fromMethod, toCls, toMethod)` — shortest A→B path · `analyze_impact_and_risk(path, cls, method_name=m)` — callers + impact tree
 
 """
 
@@ -139,6 +169,12 @@ _HELP_MD_HEADER = """\
 # gdep Tool Reference
 > Engine: {engine}
 
+## Freshness & Cache
+- **AGENTS.md**: Static snapshot. Regenerate with `gdep init <path> --force` after structural changes.
+- **Tool results**: Auto-invalidate on source file mtime change. No manual action needed.
+- **LLM summaries**: Per-class cache. Use `explore_class_semantics(path, cls, refresh=True)` to force refresh.
+- **When results feel wrong**: Run `gdep init <path> --force` first.
+
 ## Reading Guide
 - `*` = required parameter
 - Default values shown after `=`
@@ -185,6 +221,31 @@ Trace a method's full call chain with source code.
 | method_name* | str | — | Entry-point method |
 | depth | int | 5 | Max 6 recommended |
 | include_source | bool | True | Append source of entry class |
+| summary | bool | False | Compact 2-level tree + stats (saves tokens) |
+> Tip: Use `summary=True` for agent workflows to reduce context window usage.
+> Full mode can produce 2000+ tokens at depth 5; summary mode stays under 500.
+
+### find_method_callers
+Find all methods that call a specific method (reverse call graph).
+| Param | Type | Default | Notes |
+|-------|------|---------|-------|
+| project_path* | str | — | |
+| class_name* | str | — | Class containing the target method |
+| method_name* | str | — | Method to find callers of |
+> Use this to understand blast radius before modifying a method.
+
+### find_call_path
+Find the shortest call path between two methods (A → B connection).
+**C#/Unity only** — C++ and UE5 projects are not supported yet.
+| Param | Type | Default | Notes |
+|-------|------|---------|-------|
+| project_path* | str | — | |
+| from_class* | str | — | Source class |
+| from_method* | str | — | Source method |
+| to_class* | str | — | Target class |
+| to_method* | str | — | Target method |
+| depth | int | 10 | Max BFS search depth |
+> Example: `find_call_path(path, "UIBattle", "OnClick", "ManagerBattle", "PlayHand")`
 
 ### inspect_architectural_health
 Full health check: coupling, cycles, dead code, anti-patterns.
@@ -390,6 +451,16 @@ Reverse-trace all callers of a specific method across the project.
 C++ projects use regex-based call graph; C#/Unity projects use Roslyn.
 Example: `["method-impact", path, "ClassName", "methodName"]`
 
+### path
+Find the shortest call path between two methods (BFS on source-level call graph).
+**C#/Unity only** — C++ and UE5 projects are not supported yet.
+| Option | Description |
+|--------|-------------|
+| --from | Source as Class.Method (required) |
+| --to | Target as Class.Method (required) |
+| --depth N | Max BFS search depth (default: 10) |
+Example: `["path", path, "--from", "UIBattle.OnClick", "--to", "ManagerBattle.PlayHand"]`
+
 ### test-scope
 Find test files that should run when a class is modified.
 | Option | Description |
@@ -591,7 +662,7 @@ def _append_scan_snapshot(lines: list[str], profile, src_path: str) -> None:
             f"|--------|-------|",
             f"| Files | **{summary.get('fileCount', '?')}** |",
             f"| Classes | **{summary.get('classCount', '?')}** |",
-            f"| Circular deps | **{summary.get('cycleCount', 0)}** |",
+            f"| Circular deps | **{len(d.get('cycles', []))}** |",
             f"| Dead code candidates | **{summary.get('deadCount', 0)}** |",
             "",
             "> **Dead code** = classes with in-degree 0 (no other class references them in code).",
@@ -682,23 +753,105 @@ def _append_unity_context(lines: list[str], src_path: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────
+# AGENTS.md freshness — fingerprint + metadata
+# ─────────────────────────────────────────────────────────────
+
+_AGENTS_META_FILE = ".agents_meta.json"
+
+
+def _agents_fingerprint(profile) -> str:
+    """프로젝트 소스 파일의 mtime 기반 MD5 fingerprint 계산."""
+    if profile.kind in (ProjectKind.UNITY, ProjectKind.DOTNET):
+        from .runner import _cs_fingerprint, _src
+        return _cs_fingerprint(_src(profile))
+    elif profile.kind == ProjectKind.UNREAL:
+        from .uasset_cache import fingerprint_combined
+        content_roots = []
+        source_roots = list(profile.source_dirs)
+        # Content 폴더 찾기
+        for candidate in [Path(profile.root), *profile.source_dirs]:
+            content = candidate.parent / "Content" if candidate.name != "Content" else candidate
+            if content.is_dir():
+                content_roots.append(content)
+                break
+        if not content_roots:
+            content_dir = Path(profile.root) / "Content"
+            if content_dir.is_dir():
+                content_roots.append(content_dir)
+        return fingerprint_combined(content_roots, [Path(d) for d in source_roots])
+    elif profile.kind == ProjectKind.CPP:
+        from .uasset_cache import fingerprint_source
+        return fingerprint_source([Path(d) for d in profile.source_dirs])
+    else:
+        # Fallback: hash of source dir mtimes
+        import hashlib
+        import os
+        h = hashlib.md5()
+        for sd in profile.source_dirs:
+            try:
+                for entry in os.scandir(str(sd)):
+                    if entry.is_file():
+                        h.update(f"{entry.path}:{entry.stat().st_mtime_ns}\n".encode())
+            except Exception:
+                pass
+        return h.hexdigest()
+
+
+def _load_agents_meta(gdep_dir: Path) -> dict | None:
+    """Load .gdep/.agents_meta.json. Returns None if missing or corrupt."""
+    meta_path = gdep_dir / _AGENTS_META_FILE
+    try:
+        return json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _save_agents_meta(gdep_dir: Path, fingerprint: str) -> None:
+    """Save fingerprint + version metadata alongside AGENTS.md."""
+    meta = {
+        "fingerprint": fingerprint,
+        "gdep_version": __version__,
+        "generated_at": time.time(),
+    }
+    try:
+        (gdep_dir / _AGENTS_META_FILE).write_text(
+            json.dumps(meta, ensure_ascii=False), encoding="utf-8"
+        )
+    except Exception:
+        pass
+
+
+def _is_agents_md_fresh(profile) -> bool:
+    """Check whether AGENTS.md matches current source fingerprint + gdep version."""
+    gdep_dir = Path(profile.root) / ".gdep"
+    meta = _load_agents_meta(gdep_dir)
+    if meta is None:
+        return False
+    if meta.get("gdep_version") != __version__:
+        return False
+    current_fp = _agents_fingerprint(profile)
+    return meta.get("fingerprint") == current_fp
+
+
+# ─────────────────────────────────────────────────────────────
 # Public API
 # ─────────────────────────────────────────────────────────────
 
 def build_context_output(project_path: str) -> str:
     """
     get_project_context MCP 도구 및 `gdep context` CLI에서 호출.
-    .gdep/AGENTS.md가 있으면 그걸 읽고, 없으면 자동 생성 후 반환.
+    .gdep/AGENTS.md가 있고 fresh하면 그걸 읽고,
+    stale이거나 없으면 자동 재생성 후 반환.
     """
     profile = detect(project_path)
     agents_md = Path(profile.root) / ".gdep" / "AGENTS.md"
 
-    if agents_md.exists():
+    if agents_md.exists() and _is_agents_md_fresh(profile):
         return agents_md.read_text(encoding="utf-8")
 
-    # AGENTS.md 없으면 자동 생성 (저장 + .gitignore 추가 포함)
+    # stale 또는 missing → 자동 재생성
     try:
-        agents_md = write_agents_md(project_path, force=False)
+        agents_md = write_agents_md(project_path, force=True)
         return agents_md.read_text(encoding="utf-8")
     except Exception:
         return _build_agents_md(project_path)
@@ -733,7 +886,7 @@ def write_agents_md(project_path: str, force: bool = False) -> Path:
     """
     `gdep init` CLI에서 호출.
     .gdep/AGENTS.md + .gdep/HELP.md를 생성하고 AGENTS.md 경로를 반환한다.
-    force=True 이면 기존 파일을 덮어쓴다.
+    force=True 이면 무조건 재생성. False 이면 fresh할 때만 스킵.
     """
     profile = detect(project_path)
     gdep_dir = Path(profile.root) / ".gdep"
@@ -742,14 +895,26 @@ def write_agents_md(project_path: str, force: bool = False) -> Path:
     agents_md = gdep_dir / "AGENTS.md"
 
     if agents_md.exists() and not force:
-        return agents_md
+        if _is_agents_md_fresh(profile):
+            return agents_md  # fresh → 스킵
+        # stale → fall through to regenerate
 
     content = _build_agents_md(project_path)
     agents_md.write_text(content, encoding="utf-8")
 
-    # HELP.md도 함께 생성
+    # 메타데이터 저장 (fingerprint + version)
+    fp = _agents_fingerprint(profile)
+    _save_agents_meta(gdep_dir, fp)
+
+    # HELP.md: 버전 불일치 또는 missing 또는 force 시 재생성
     help_md = gdep_dir / "HELP.md"
-    if not help_md.exists() or force:
+    meta = _load_agents_meta(gdep_dir)
+    help_needs_regen = (
+        not help_md.exists()
+        or force
+        or (meta and meta.get("gdep_version") != __version__)
+    )
+    if help_needs_regen:
         help_md.write_text(_build_help_md(project_path), encoding="utf-8")
 
     return agents_md

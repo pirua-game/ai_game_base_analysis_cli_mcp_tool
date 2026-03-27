@@ -9,7 +9,8 @@ public class DescribeCommand
     private readonly CSharpParser _parser = new();
 
     public void Execute(string path, string className, string? outputFile,
-        string format = "console", bool skipProto = true, string[]? ignorePatterns = null)
+        string format = "console", bool skipProto = true, string[]? ignorePatterns = null,
+        int maxFields = 80, int maxMethods = 150)
     {
         if (!Directory.Exists(path))
         {
@@ -75,7 +76,7 @@ public class DescribeCommand
 
         if (format == "console")
         {
-            PrintConsole(target, referencedBy, allParsed);
+            PrintConsole(target, referencedBy, allParsed, maxFields, maxMethods);
         }
         else
         {
@@ -99,7 +100,8 @@ public class DescribeCommand
 
     // ── Console Output ────────────────────────────────────────────────
 
-    private void PrintConsole(ParsedType t, List<string> referencedBy, List<ParsedType> allParsed)
+    private void PrintConsole(ParsedType t, List<string> referencedBy, List<ParsedType> allParsed,
+        int maxFields = 80, int maxMethods = 150)
     {
         var node = t.Node;
         var kindLabel = t.TypeKind switch
@@ -149,10 +151,10 @@ public class DescribeCommand
         }
 
         // Fields/Properties
-        PrintFieldSection(t.Fields);
+        PrintFieldSection(t.Fields, maxFields);
 
         // Methods
-        PrintMethodSection(t.Methods);
+        PrintMethodSection(t.Methods, maxMethods);
 
         // External References (unique types only)
         var outRefs = t.Edges
@@ -210,7 +212,7 @@ public class DescribeCommand
             $"Referenced By [white]{referencedBy.Count}[/]");
     }
 
-    private void PrintFieldSection(List<FieldInfo> fields)
+    private void PrintFieldSection(List<FieldInfo> fields, int maxItems = 80)
     {
         if (!fields.Any()) return;
 
@@ -224,7 +226,7 @@ public class DescribeCommand
         var pubFields  = fields.Where(f => f.IsPublic).OrderBy(f => f.Name).ToList();
         var privFields = fields.Where(f => !f.IsPublic).OrderBy(f => f.Name).ToList();
 
-        foreach (var f in pubFields.Concat(privFields).Take(40))
+        foreach (var f in pubFields.Concat(privFields).Take(maxItems))
         {
             var access = f.IsPublic ? "[white]public[/]" : "[gray]private[/]";
             if (f.IsStatic)   access += " [blue]static[/]";
@@ -233,14 +235,14 @@ public class DescribeCommand
             table.AddRow(Markup.Escape(f.Name), Markup.Escape(f.TypeName), access, kind);
         }
 
-        if (fields.Count > 40)
-            table.AddRow($"[gray]... and {fields.Count - 40} more[/]", "", "", "");
+        if (fields.Count > maxItems)
+            table.AddRow($"[gray]... and {fields.Count - maxItems} more[/]", "", "", "");
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
     }
 
-    private void PrintMethodSection(List<MethodInfo> methods)
+    private void PrintMethodSection(List<MethodInfo> methods, int maxItems = 150)
     {
         if (!methods.Any()) return;
 
@@ -254,7 +256,7 @@ public class DescribeCommand
         var pubMethods  = methods.Where(m => m.IsPublic).OrderBy(m => m.Name).ToList();
         var privMethods = methods.Where(m => !m.IsPublic).OrderBy(m => m.Name).ToList();
 
-        foreach (var m in pubMethods.Concat(privMethods).Take(50))
+        foreach (var m in pubMethods.Concat(privMethods).Take(maxItems))
         {
             var mods = new List<string>();
             if (m.IsAsync)    mods.Add("[blue]async[/]");
@@ -271,8 +273,8 @@ public class DescribeCommand
             table.AddRow(Markup.Escape(m.Name), Markup.Escape(m.ReturnType), paramStr, modStr);
         }
 
-        if (methods.Count > 50)
-            table.AddRow($"[gray]... and {methods.Count - 50} more[/]", "", "", "");
+        if (methods.Count > maxItems)
+            table.AddRow($"[gray]... and {methods.Count - maxItems} more[/]", "", "", "");
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();

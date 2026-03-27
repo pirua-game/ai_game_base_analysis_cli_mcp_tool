@@ -31,14 +31,21 @@ public record FlowDispatchJson(
     [property: JsonPropertyName("handler")] string Handler
 );
 
+public record SwitchDispatchJson(
+    [property: JsonPropertyName("switchExpression")] string SwitchExpression,
+    [property: JsonPropertyName("fromMethod")]       string FromMethod,
+    [property: JsonPropertyName("caseTargets")]      List<string> CaseTargets
+);
+
 public record FlowGraphJson(
-    [property: JsonPropertyName("entry")]      string Entry,
-    [property: JsonPropertyName("entryClass")] string EntryClass,
-    [property: JsonPropertyName("depth")]      int Depth,
-    [property: JsonPropertyName("focus")]      string[] Focus,
-    [property: JsonPropertyName("nodes")]      List<FlowNodeJson> Nodes,
-    [property: JsonPropertyName("edges")]      List<FlowEdgeJson> Edges,
-    [property: JsonPropertyName("dispatches")] List<FlowDispatchJson> Dispatches
+    [property: JsonPropertyName("entry")]            string Entry,
+    [property: JsonPropertyName("entryClass")]       string EntryClass,
+    [property: JsonPropertyName("depth")]            int Depth,
+    [property: JsonPropertyName("focus")]            string[] Focus,
+    [property: JsonPropertyName("nodes")]            List<FlowNodeJson> Nodes,
+    [property: JsonPropertyName("edges")]            List<FlowEdgeJson> Edges,
+    [property: JsonPropertyName("dispatches")]       List<FlowDispatchJson> Dispatches,
+    [property: JsonPropertyName("switchDispatches")] List<SwitchDispatchJson> SwitchDispatches
 );
 
 public class FlowCommand
@@ -191,14 +198,27 @@ public class FlowCommand
             })
             .ToList();
 
+        // Group switch-case edges: edges with "switch: X" condition from same source
+        var switchDispatches = edges
+            .Where(e => e.Condition != null && e.Condition.StartsWith("switch: "))
+            .GroupBy(e => (From: e.From, Expr: e.Condition!))
+            .Select(g => new SwitchDispatchJson(
+                SwitchExpression: g.Key.Expr["switch: ".Length..],
+                FromMethod:       g.Key.From,
+                CaseTargets:      g.Select(e => e.To).Distinct().ToList()
+            ))
+            .Where(sd => sd.CaseTargets.Count > 1)
+            .ToList();
+
         var result = new FlowGraphJson(
-            Entry:      $"{entryClass}.{entryMethod}",
-            EntryClass: entryClass,
-            Depth:      depth,
-            Focus:      focus,
-            Nodes:      nodes,
-            Edges:      edges,
-            Dispatches: dispatches
+            Entry:            $"{entryClass}.{entryMethod}",
+            EntryClass:       entryClass,
+            Depth:            depth,
+            Focus:            focus,
+            Nodes:            nodes,
+            Edges:            edges,
+            Dispatches:       dispatches,
+            SwitchDispatches: switchDispatches
         );
 
         return JsonSerializer.Serialize(result, new JsonSerializerOptions
