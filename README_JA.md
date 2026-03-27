@@ -73,8 +73,8 @@ gdep MCP:   直接依存 2 件 · 間接 200 件以上の UI クラス · アセ
 | ツール | 使用タイミング |
 |--------|-------------|
 | `get_project_context` | **必ず最初に呼び出す** — プロジェクト全体概要 |
-| `analyze_impact_and_risk` | クラス変更前の安全確認（`detail_level="summary"` で高速要約） |
-| `explain_method_logic` | 単一メソッドの内部制御フロー要約 — Guard/Branch/Loop/Always |
+| `analyze_impact_and_risk` | クラス・メソッド変更前の安全確認（`method_name=` でメソッドレベル呼び出し元追跡; `detail_level="summary"` で高速要約） |
+| `explain_method_logic` | 単一メソッドの内部制御フロー要約 — Guard/Branch/Loop/Always。C++ namespace 関数対応 |
 | `trace_gameplay_flow` | C++ → Blueprint 呼び出しチェーン追跡 |
 | `inspect_architectural_health` | 技術的負債の全体診断 |
 | `explore_class_semantics` | 未知クラスの詳細把握 |
@@ -176,6 +176,7 @@ run.bat              # Windows — バックエンド + フロントエンドを
 | `describe` | クラス詳細 + **完全な継承チェーン** + Blueprint 実装 + AI 要約 | 未知クラス、コードレビュー |
 | `flow` | 呼び出しチェーン（C++→BP 境界） | バグ追跡、フロー解析 |
 | `impact` | 変更波及効果の逆追跡 | リファクタリング前の安全確認 |
+| `method-impact` | 特定メソッドの呼び出し元を逆追跡 | メソッド変更前の影響範囲把握 |
 | `test-scope` | クラス変更後に実行すべきテストファイル | マージ前、CI 計画 |
 | `watch` | リアルタイムファイル変更監視 (impact+test+lint) | 開発中の常時モニタリング |
 | `lint` | ゲーム特化アンチパターン 16 個（+ `--fix`） | PR 品質チェック |

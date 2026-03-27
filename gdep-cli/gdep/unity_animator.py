@@ -267,7 +267,8 @@ def _parse_controller_file(controller_path: Path) -> AnimatorController | None:
 # ── Public API ────────────────────────────────────────────────
 
 def _find_controllers(project_path: str,
-                      controller_name: str | None = None) -> list[Path]:
+                      controller_name: str | None = None,
+                      max_count: int = 0) -> list[Path]:
     """Find .controller files in a Unity project."""
     root = Path(project_path).resolve()
     _IGNORE = {"Library", "Temp", "obj", "Packages", "node_modules", ".git", "ProjectSettings"}
@@ -278,23 +279,32 @@ def _find_controllers(project_path: str,
             continue
         if controller_name is None or f.stem.lower() == controller_name.lower():
             results.append(f)
+        if max_count and len(results) >= max_count:
+            break
 
     return results
 
 
 def analyze_animator(project_path: str,
-                     controller_name: str | None = None) -> str:
+                     controller_name: str | None = None,
+                     detail_level: str = "summary") -> str:
     """
     Analyze Unity Animator Controller(s) and return a structured summary.
 
     Args:
         project_path:    Unity project or Assets folder path.
         controller_name: Optional — only analyze the named controller.
+        detail_level:    "summary" (default) — names + layer/state counts.
+                         "full" — complete analysis with parameters, blend trees.
 
     Returns:
         Structured text describing layers, states, and blend trees.
     """
-    controllers_paths = _find_controllers(project_path, controller_name)
+    cap = 10
+    controllers_paths = _find_controllers(
+        project_path, controller_name,
+        max_count=cap if detail_level == "summary" and controller_name is None else 0,
+    )
 
     if not controllers_paths:
         msg = (
@@ -304,9 +314,28 @@ def analyze_animator(project_path: str,
         )
         return msg
 
+    # ── Summary mode: lightweight counts only ──
+    if detail_level == "summary":
+        lines: list[str] = []
+        lines.append(f"Found {len(controllers_paths)} controller(s)"
+                     + (f" (capped at {cap})" if len(controllers_paths) >= cap else ""))
+        lines.append("")
+        for ctrl_path in controllers_paths:
+            try:
+                text = ctrl_path.read_text(encoding="utf-8", errors="replace")
+                layer_count = len(re.findall(r'AnimatorStateMachine:', text))
+                state_count = len(re.findall(r'AnimatorState:', text))
+                lines.append(f"- **{ctrl_path.stem}**  ({layer_count} layers, {state_count} states)")
+            except Exception:
+                lines.append(f"- **{ctrl_path.stem}**  (read error)")
+        lines.append("")
+        lines.append('Tip: Use detail_level="full" or specify controller_name for detailed analysis.')
+        return "\n".join(lines)
+
+    # ── Full mode: deep parsing ──
     lines: list[str] = []
 
-    for ctrl_path in controllers_paths[:10]:  # cap at 10 to avoid overwhelming output
+    for ctrl_path in controllers_paths[:cap]:
         ctrl = _parse_controller_file(ctrl_path)
         if ctrl is None:
             lines.append(f"## {ctrl_path.name} — parse failed\n")
@@ -346,7 +375,7 @@ def analyze_animator(project_path: str,
 
         lines.append("")
 
-    if len(controllers_paths) > 10:
-        lines.append(f"... and {len(controllers_paths)-10} more controllers not shown")
+    if len(controllers_paths) > cap:
+        lines.append(f"... and {len(controllers_paths)-cap} more controllers not shown")
 
     return "\n".join(lines)

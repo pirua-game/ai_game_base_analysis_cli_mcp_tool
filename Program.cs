@@ -1,5 +1,7 @@
 ﻿using gdep.Commands;
 
+Console.OutputEncoding = System.Text.Encoding.UTF8;
+
 if (args.Length == 0 || args[0] == "--help" || args[0] == "-h")
 {
     PrintHelp();
@@ -101,6 +103,17 @@ if (args[0] == "flow")
     return 0;
 }
 
+// ── method-impact ─────────────────────────────────────────────
+if (args[0] == "method-impact")
+{
+    if (args.Length < 4) { Console.WriteLine("Usage: gdep method-impact <path> <targetClass> <targetMethod>"); return 1; }
+    var path         = args[1];
+    var targetClass  = args[2];
+    var targetMethod = args[3];
+    new MethodImpactCommand().Execute(path, targetClass, targetMethod);
+    return 0;
+}
+
 // ── impact ────────────────────────────────────────────────────
 if (args[0] == "impact")
 {
@@ -194,9 +207,10 @@ void PrintHelp()
     Console.WriteLine("  diff     <path>              Detect changes between git commits");
     Console.WriteLine("  describe <path> <className>   Detailed class visualization");
     Console.WriteLine("  flow     <path>              Track method call flow");
-    Console.WriteLine("  impact   <path> <className>   Impact analysis for a specific class");
+    Console.WriteLine("  impact         <path> <className>              Impact analysis for a specific class");
     Console.WriteLine("    --depth <N>             Impact tracing depth (default: 3)");
     Console.WriteLine("    --deep                  Analyze dependencies inside method bodies");
+    Console.WriteLine("  method-impact  <path> <targetClass> <targetMethod>  Reverse method call analysis");
     Console.WriteLine("  lint     <path>              Scan for game-specific anti-patterns (Unity)");
     Console.WriteLine("  hints    <subcommand> <path> Manage hint files");
     Console.WriteLine();

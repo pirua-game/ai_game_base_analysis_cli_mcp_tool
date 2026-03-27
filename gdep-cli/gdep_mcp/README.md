@@ -69,8 +69,8 @@ pip install gdep "mcp[cli]"
 
 | Tool | Description |
 |------|-------------|
-| `analyze_impact_and_risk` | Impact scope + lint before modifying a class. `detail_level="summary"` for a quick count; `query=` to filter results |
-| `explain_method_logic` | Summarize internal control flow of a single method — Guard / Branch / Loop / Always in 5–10 lines |
+| `analyze_impact_and_risk` | Impact scope + lint before modifying a class or method. `method_name=` for method-level callers; `detail_level="summary"` for a quick count; `query=` to filter results |
+| `explain_method_logic` | Summarize internal control flow of a single method — Guard / Branch / Loop / Always in 5–10 lines. Supports C++ namespace-style functions |
 | `trace_gameplay_flow` | Method call chain + source code |
 | `inspect_architectural_health` | Coupling / circular deps / dead code / anti-patterns |
 | `explore_class_semantics` | Class structure + AI 3-line summary |
@@ -118,6 +118,9 @@ pip install gdep "mcp[cli]"
 
 "Quick — how many classes use BattleCore?"
 → analyze_impact_and_risk(path, "BattleCore", detail_level="summary")
+
+"Who calls BattleCore.ExecuteAction across the whole project?"
+→ analyze_impact_and_risk(path, "BattleCore", method_name="ExecuteAction")
 
 "What conditions are inside the DrawCard method?"
 → explain_method_logic

@@ -26,7 +26,8 @@ def run(project_path: str, rule_ids: list[str] | None = None) -> str:
     snippets showing HOW to fix each anti-pattern found.
 
     Only issues that have a known fix template are returned (currently:
-    UNI-PERF-001, UNI-PERF-002, UE5-BASE-001, UNI-ASYNC-001).
+    UNI-PERF-001, UNI-PERF-002, UE5-BASE-001, UNI-ASYNC-001,
+    AXM-PERF-001, AXM-MEM-001, AXM-EVENT-001).
 
     Use this tool WHEN:
     - User asks "how do I fix these lint issues?"

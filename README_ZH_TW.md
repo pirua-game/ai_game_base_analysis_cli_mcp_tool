@@ -74,8 +74,8 @@ gdep MCP:   直接相依 2 個 · 間接 200+ UI 類別 · 資源: prefabs/UI/co
 | 工具 | 使用時機 |
 |------|---------|
 | `get_project_context` | **始終最先呼叫** — 專案整體概覽 |
-| `analyze_impact_and_risk` | 修改類別前的安全確認（`detail_level="summary"` 快速摘要） |
-| `explain_method_logic` | 單一方法內部控制流摘要 — Guard/Branch/Loop/Always |
+| `analyze_impact_and_risk` | 修改類別或方法前的安全確認（`method_name=` 追蹤方法級呼叫方；`detail_level="summary"` 快速摘要） |
+| `explain_method_logic` | 單一方法內部控制流摘要 — Guard/Branch/Loop/Always。支援 C++ namespace 函式 |
 | `trace_gameplay_flow` | C++ → Blueprint 呼叫鏈追蹤 |
 | `inspect_architectural_health` | 技術債務全面診斷 |
 | `explore_class_semantics` | 陌生類別深度分析 |
@@ -175,6 +175,7 @@ run.bat              # Windows — 自動在兩個獨立終端中啟動後端 + 
 | `describe` | 類別詳情 + **完整繼承鏈** + Blueprint 實作 + AI 摘要 | 陌生類別、程式碼審查 |
 | `flow` | 呼叫鏈追蹤（C++→BP 邊界） | Bug 追蹤、流程分析 |
 | `impact` | 變更影響範圍反向追蹤 | 重構前安全確認 |
+| `method-impact` | 反向追蹤呼叫特定方法的所有方法 | 修改方法前了解呼叫來源 |
 | `test-scope` | 修改類別後應執行的測試檔案 | 合併前、CI 規劃 |
 | `watch` | 即時檔案變更監視 (impact+test+lint) | 開發中持續監控 |
 | `lint` | 16 條遊戲專用反模式（+ `--fix`） | PR 前品質檢查 |

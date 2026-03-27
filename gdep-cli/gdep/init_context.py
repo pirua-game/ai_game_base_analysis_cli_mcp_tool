@@ -75,6 +75,7 @@ have to read every file.
 _QUICK_REF_COMMON = """\
 ## Quick Reference
 Common: `explore_class_semantics` · `trace_gameplay_flow` · `analyze_impact_and_risk` · `inspect_architectural_health` · `get_architecture_advice` · `explain_method_logic` · `suggest_lint_fixes` · `summarize_project_diff`
+Method-level: `analyze_impact_and_risk(path, cls, method_name=m)` — callers of a specific method · `execute_gdep_cli(["method-impact", path, cls, m])` — raw CLI
 
 """
 
@@ -164,14 +165,16 @@ Full class structure: fields, methods, dependencies, asset usages.
 | refresh | bool | False | Bypass summary cache |
 
 ### analyze_impact_and_risk
-Blast radius analysis before modifying a class.
+Blast radius analysis before modifying a class or method.
 | Param | Type | Default | Notes |
 |-------|------|---------|-------|
 | project_path* | str | — | |
 | class_name* | str | — | |
+| method_name | str | None | If provided, also traces method-level callers of class_name::method_name |
 | detail_level | str | "summary" | "summary" (fast) or "full" (expensive) |
 | query | str | None | Filter results by class name/pattern |
-> Tip: Always use "summary" first.
+> Tip: Use `method_name=` to find exactly who calls a specific method (C++ and C# supported).
+> Always use `detail_level="summary"` first to gauge scope before requesting "full".
 
 ### trace_gameplay_flow
 Trace a method's full call chain with source code.
@@ -195,11 +198,13 @@ Full health check: coupling, cycles, dead code, anti-patterns.
 
 ### explain_method_logic
 Internal control flow of a specific method (Guard/Branch/Loop/Always).
+Supports C++ `ClassName::method` and namespace-style functions (`namespace Foo { void bar() {} }`).
 | Param | Type | Default | Notes |
 |-------|------|---------|-------|
 | project_path* | str | — | |
-| class_name* | str | — | |
+| class_name* | str | — | Use namespace name for namespace-style C++ functions |
 | method_name* | str | — | |
+> If method not found in the given class, the tool suggests classes that DO contain it.
 
 ### get_architecture_advice
 Architecture diagnosis with refactoring suggestions.
@@ -304,6 +309,7 @@ Animator Controller structure: layers, states, transitions, blend trees.
 |-------|------|---------|-------|
 | project_path* | str | — | |
 | controller_name | str | None | Specific .controller file; None → all |
+| detail_level | str | "summary" | "summary" → names + counts; "full" → deep analysis |
 
 """
 
@@ -378,6 +384,11 @@ Show change blast radius — who depends on this class, transitively.
 | --depth N | Reverse-dependency tracing depth (default: 3) |
 | --kind | Force project type |
 Example: `["impact", path, "ClassName"]`
+
+### method-impact
+Reverse-trace all callers of a specific method across the project.
+C++ projects use regex-based call graph; C#/Unity projects use Roslyn.
+Example: `["method-impact", path, "ClassName", "methodName"]`
 
 ### test-scope
 Find test files that should run when a class is modified.
@@ -458,21 +469,24 @@ Example: `["info"]`
 
 ## Lint Rule IDs
 
-| ID | Engine | Description |
-|----|--------|-------------|
-| UNI-PERF-001 | Unity | GetComponent/Find inside Update |
-| UNI-PERF-002 | Unity | Object allocation inside Update |
-| UNI-ASYNC-001 | Unity | IEnumerator while(true) with no yield |
-| UNI-ASYNC-002 | Unity | Heavy Unity API inside Coroutine |
-| UE5-PERF-001 | UE5 | SpawnActor/LoadObject inside Tick |
-| UE5-PERF-002 | UE5 | Sync LoadObject inside BeginPlay |
-| UE5-BASE-001 | UE5 | Missing Super:: in overridden lifecycle |
-| UE5-GAS-001 | UE5 | ActivateAbility without CommitAbility |
-| UE5-GAS-002 | UE5 | World query inside Ability |
-| UE5-GAS-003 | UE5 | Excessive BlueprintCallable (>10) |
-| UE5-GAS-004 | UE5 | BlueprintPure missing const |
-| UE5-NET-001 | UE5 | Replicated property without callback |
-| GEN-ARCH-001 | All | Circular dependency |
+| ID | Engine | Severity | Fix Template | Description |
+|----|--------|----------|-------------|-------------|
+| UNI-PERF-001 | Unity | Warning | ✅ | GetComponent/Find inside Update |
+| UNI-PERF-002 | Unity | Warning | ✅ | Object allocation inside Update |
+| UNI-ASYNC-001 | Unity | Error | ✅ | IEnumerator while(true) with no yield |
+| UNI-ASYNC-002 | Unity | Warning | — | Heavy Unity API inside Coroutine |
+| UE5-PERF-001 | UE5 | Error | — | SpawnActor/LoadObject inside Tick |
+| UE5-PERF-002 | UE5 | Warning | — | Sync LoadObject inside BeginPlay |
+| UE5-BASE-001 | UE5 | Warning | ✅ | Missing Super:: in overridden lifecycle |
+| UE5-GAS-001 | UE5 | Warning | — | ActivateAbility without CommitAbility |
+| UE5-GAS-002 | UE5 | Warning | — | World query inside Ability |
+| UE5-GAS-003 | UE5 | Info | — | Excessive BlueprintCallable (>10) |
+| UE5-GAS-004 | UE5 | Info | — | BlueprintPure missing const |
+| UE5-NET-001 | UE5 | Info | — | Replicated property without callback |
+| AXM-PERF-001 | Axmol | Warning | ✅ | getChildByName/getChildByTag inside update() |
+| AXM-MEM-001 | Axmol | Warning | ✅ | retain() called without matching release() |
+| AXM-EVENT-001 | Axmol | Info | ✅ | addEventListenerWith* without removeEventListener |
+| GEN-ARCH-001 | All | Warning | — | Circular dependency |
 
 ## Confidence Levels
 

@@ -265,12 +265,78 @@ class UE5TSParser:
             self._handle_class_specifier(node)
         elif node.type == "enum_specifier":
             self._handle_enum_specifier(node)
+        elif node.type == "namespace_definition":
+            self._handle_namespace(node)
+            return  # children handled inside _handle_namespace
         elif node.type == "function_definition" and self._deep:
             # Analyze method body (including out-of-class definitions)
             self._handle_out_of_class_function(node)
 
         for child in node.children:
             self._walk(child)
+
+    def _handle_namespace(self, node: Node):
+        """Parse namespace_definition as a pseudo-class so tools like
+        explore_class_semantics can find utility namespaces."""
+        name_node = node.child_by_field_name("name")
+        if not name_node:
+            return
+
+        ns_name = name_node.text.decode("utf-8").strip()
+        if not ns_name or not ns_name[0].isupper():
+            return  # skip anonymous or lowercase namespaces (e.g. detail::)
+
+        cls = UE5Class(name=ns_name, kind="namespace", source_file=str(self._file_path))
+
+        body = node.child_by_field_name("body")
+        if body:
+            for child in body.children:
+                if child.type in ("function_definition", "declaration"):
+                    self._parse_namespace_func(child, cls)
+                elif child.type in ("class_specifier", "struct_specifier"):
+                    self._handle_class_specifier(child)
+                elif child.type == "enum_specifier":
+                    self._handle_enum_specifier(child)
+
+        self._classes.append(cls)
+
+    def _parse_namespace_func(self, node: Node, cls: UE5Class):
+        """Extract a free function inside a namespace as a UE5Function."""
+        decl = node.child_by_field_name("declarator")
+        if not decl:
+            return
+
+        # Walk down to find function_declarator
+        curr = decl
+        while curr and curr.type != "function_declarator":
+            curr = curr.named_child(0) if curr.named_child_count > 0 else None
+        if not curr:
+            return
+
+        name_node = curr.child_by_field_name("declarator")
+        if not name_node:
+            return
+
+        func_name = name_node.text.decode("utf-8").strip()
+        if not func_name or func_name.startswith("~"):
+            return
+
+        ret_type = ""
+        type_node = node.child_by_field_name("type")
+        if type_node:
+            ret_type = _normalize_cpp_type(type_node.text.decode("utf-8"))
+
+        fn = UE5Function(name=func_name, return_type=ret_type, access="public")
+
+        params_node = curr.child_by_field_name("parameters")
+        if params_node:
+            for param in params_node.children:
+                if param.type == "parameter_declaration":
+                    p_type = param.child_by_field_name("type")
+                    if p_type:
+                        fn.params.append(_normalize_cpp_type(p_type.text.decode("utf-8")))
+
+        cls.functions.append(fn)
 
     def _handle_enum_specifier(self, node: Node):
         """Parse UENUM"""

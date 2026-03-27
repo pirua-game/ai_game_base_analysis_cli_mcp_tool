@@ -64,6 +64,73 @@ def _make_unity_fix(rule_id: str, method_name: str) -> str | None:
     return None
 
 
+def _make_axmol_fix(rule_id: str, class_name: str) -> str | None:
+    """Generate a code fix template for Axmol lint rules."""
+    if rule_id == "AXM-PERF-001":
+        return (
+            f"// 1. Declare a member variable in the class header:\n"
+            f"Node* _cachedChild = nullptr;\n"
+            f"\n"
+            f"// 2. Cache the reference in init() or onEnter():\n"
+            f"bool {class_name}::init()\n"
+            f"{{\n"
+            f"    _cachedChild = getChildByName(\"child_name\");\n"
+            f"    return true;\n"
+            f"}}\n"
+            f"\n"
+            f"// 3. Use the cached reference in update():\n"
+            f"void {class_name}::update(float dt)\n"
+            f"{{\n"
+            f"    // Replace: getChildByName(\"child_name\")\n"
+            f"    // With:    _cachedChild\n"
+            f"}}"
+        )
+    if rule_id == "AXM-MEM-001":
+        return (
+            f"// Add release() in the destructor or cleanup():\n"
+            f"{class_name}::~{class_name}()\n"
+            f"{{\n"
+            f"    if (_retainedObject)\n"
+            f"    {{\n"
+            f"        _retainedObject->release();\n"
+            f"        _retainedObject = nullptr;\n"
+            f"    }}\n"
+            f"}}\n"
+            f"\n"
+            f"// Or in cleanup():\n"
+            f"void {class_name}::cleanup()\n"
+            f"{{\n"
+            f"    if (_retainedObject)\n"
+            f"    {{\n"
+            f"        _retainedObject->release();\n"
+            f"        _retainedObject = nullptr;\n"
+            f"    }}\n"
+            f"    Node::cleanup();\n"
+            f"}}"
+        )
+    if rule_id == "AXM-EVENT-001":
+        return (
+            f"// Add removeEventListener in onExit() or cleanup():\n"
+            f"void {class_name}::onExit()\n"
+            f"{{\n"
+            f"    _eventDispatcher->removeEventListenersForTarget(this);\n"
+            f"    Node::onExit();\n"
+            f"}}\n"
+            f"\n"
+            f"// Or if using specific listeners:\n"
+            f"void {class_name}::cleanup()\n"
+            f"{{\n"
+            f"    if (_touchListener)\n"
+            f"    {{\n"
+            f"        _eventDispatcher->removeEventListener(_touchListener);\n"
+            f"        _touchListener = nullptr;\n"
+            f"    }}\n"
+            f"    Node::cleanup();\n"
+            f"}}"
+        )
+    return None
+
+
 class Linter:
     def __init__(self):
         self.results: list[LintResult] = []
@@ -490,6 +557,7 @@ class Linter:
                             "Cache the child node pointer in onEnter() or init() "
                             "and store it as a member variable."
                         ),
+                        fix_suggestion=_make_axmol_fix("AXM-PERF-001", update_cls),
                     ))
 
             # AXM-MEM-001: retain() without release() in same file
@@ -509,6 +577,7 @@ class Linter:
                         "Ensure every retain() has a matching release() "
                         "in the destructor or cleanup()."
                     ),
+                    fix_suggestion=_make_axmol_fix("AXM-MEM-001", cls_name or cpp_file.stem),
                 ))
 
             # AXM-EVENT-001: addEventListenerWith* without removeEventListener
@@ -528,6 +597,7 @@ class Linter:
                         "Call _eventDispatcher->removeEventListeners* "
                         "in onExit() or cleanup() to prevent stale listeners."
                     ),
+                    fix_suggestion=_make_axmol_fix("AXM-EVENT-001", cls_name or cpp_file.stem),
                 ))
 
         return results

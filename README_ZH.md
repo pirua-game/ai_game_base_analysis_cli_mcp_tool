@@ -74,8 +74,8 @@ gdep MCP:   直接依赖 2 个 · 间接 200+ UI 类 · 资源: prefabs/UI/comba
 | 工具 | 使用时机 |
 |------|---------|
 | `get_project_context` | **始终最先调用** — 项目整体概览 |
-| `analyze_impact_and_risk` | 修改类前的安全确认（`detail_level="summary"` 快速摘要） |
-| `explain_method_logic` | 单个方法内部控制流摘要 — Guard/Branch/Loop/Always |
+| `analyze_impact_and_risk` | 修改类或方法前的安全确认（`method_name=` 追踪方法级调用方；`detail_level="summary"` 快速摘要） |
+| `explain_method_logic` | 单个方法内部控制流摘要 — Guard/Branch/Loop/Always。支持 C++ namespace 函数 |
 | `trace_gameplay_flow` | C++ → Blueprint 调用链追踪 |
 | `inspect_architectural_health` | 技术债务全面诊断 |
 | `explore_class_semantics` | 陌生类深度分析 |
@@ -175,6 +175,7 @@ run.bat              # Windows — 自动在两个独立终端中启动后端 + 
 | `describe` | 类详情 + **完整继承链** + Blueprint 实现 + AI 摘要 | 陌生类、代码审查 |
 | `flow` | 调用链追踪（C++→BP 边界） | Bug 追踪、流程分析 |
 | `impact` | 变更影响范围反向追踪 | 重构前安全确认 |
+| `method-impact` | 反向追踪调用特定方法的所有方法 | 修改方法前了解调用来源 |
 | `test-scope` | 修改类后应运行的测试文件 | 合并前、CI 规划 |
 | `watch` | 实时文件变更监视 (impact+test+lint) | 开发中持续监控 |
 | `lint` | 16 条游戏专用反模式（+ `--fix`） | PR 前质量检查 |

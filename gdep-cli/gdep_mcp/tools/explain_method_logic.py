@@ -26,7 +26,7 @@ def run(project_path: str, class_name: str, method_name: str) -> str:
         is_cpp = profile.kind in (ProjectKind.UNREAL, ProjectKind.CPP)
 
         if is_cpp:
-            src_result = runner.read_source(profile, class_name, max_chars=8000)
+            src_result = runner.read_source(profile, class_name, max_chars=100_000)
             if not src_result.ok:
                 return (
                     f"[explain_method_logic] Could not read source for `{class_name}`: "
@@ -48,6 +48,14 @@ def run(project_path: str, class_name: str, method_name: str) -> str:
         body = _extract_cpp_method(source, method_name) if is_cpp else _extract_cs_method(source, method_name)
 
         if body is None:
+            suggestions = _find_method_elsewhere(project_path, profile, method_name, is_cpp)
+            if suggestions:
+                suggest_str = ", ".join(f"`{s}`" for s in suggestions[:5])
+                return (
+                    f"[explain_method_logic] Method `{method_name}` not found in `{class_name}`.\n"
+                    f"Found in: {suggest_str}\n"
+                    f"Tip: call again with the correct class name."
+                )
             return (
                 f"[explain_method_logic] Method `{method_name}` not found in `{class_name}`.\n"
                 f"Tip: check the exact method name spelling or that the source file was found."
@@ -102,12 +110,19 @@ def _extract_cpp_method(source: str, method_name: str) -> str | None:
     except Exception:
         pass
 
-    # Fallback: simple brace-counting regex
+    # Fallback 1: ClassName::method_name pattern
     pat = re.compile(
         r'\b\w+\s*::\s*' + re.escape(method_name) + r'\s*\([^{;]*\)\s*(?:const\s*)?\{',
         re.DOTALL,
     )
     m = pat.search(source)
+    if not m:
+        # Fallback 2: namespace-style (func defined without ClassName:: prefix inside namespace block)
+        # e.g.  std::string bigAddNum(std::string a, int b) {
+        pat_ns = re.compile(
+            r'(?:^|\n)[ \t]*(?:[\w:<>*& ]+[ \t]+)' + re.escape(method_name) + r'\s*\([^;{}]*\)\s*(?:const\s*)?\s*\{',
+        )
+        m = pat_ns.search(source)
     if not m:
         return None
     start = source.index("{", m.start())
@@ -296,3 +311,55 @@ def _top_level_calls(body: str) -> list[str]:
                 calls.append(call)
                 seen.add(call)
     return calls
+
+
+# ── Method search helper ──────────────────────────────────────
+
+def _find_method_elsewhere(project_path: str, profile, method_name: str, is_cpp: bool) -> list[str]:
+    """Search entire project for classes containing the given method."""
+    if is_cpp:
+        try:
+            from gdep.cpp_flow import _find_cpp_files
+            src = str(profile.source_dirs[0]) if profile.source_dirs else project_path
+            cpp_files = _find_cpp_files(src)
+            owners: list[str] = []
+            pat = re.compile(r'\b(\w+)\s*::\s*' + re.escape(method_name) + r'\s*\(')
+            for cls_name, cpp_path in cpp_files.items():
+                try:
+                    text = Path(cpp_path).read_text(encoding="utf-8", errors="replace")
+                    if pat.search(text):
+                        owners.append(cls_name)
+                except Exception:
+                    continue
+            return owners
+        except Exception:
+            return []
+
+    # ── C# path ──
+    try:
+        src = str(profile.source_dirs[0]) if profile.source_dirs else project_path
+        root = Path(src)
+        _IGNORE = {"obj", "bin", "Library", "Packages", "Temp", ".git", "node_modules"}
+        pat = re.compile(r'\b' + re.escape(method_name) + r'\s*\(')
+        class_pat = re.compile(r'(?:class|struct|interface)\s+(\w+)')
+        owners: list[str] = []
+        seen: set[str] = set()
+        for cs_file in root.rglob("*.cs"):
+            if any(part in _IGNORE for part in cs_file.parts):
+                continue
+            try:
+                text = cs_file.read_text(encoding="utf-8", errors="replace")
+                if pat.search(text):
+                    for m in class_pat.finditer(text):
+                        cls = m.group(1)
+                        if cls not in seen:
+                            owners.append(cls)
+                            seen.add(cls)
+                            break
+            except Exception:
+                continue
+            if len(owners) >= 10:
+                break
+        return owners
+    except Exception:
+        return []

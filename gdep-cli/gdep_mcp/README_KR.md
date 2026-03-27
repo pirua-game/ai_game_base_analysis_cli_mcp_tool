@@ -66,8 +66,8 @@ pip install gdep "mcp[cli]"
 
 | 도구 | 설명 |
 |------|------|
-| `analyze_impact_and_risk` | 클래스 수정 전 파급 범위 + 린트. `detail_level="summary"`로 빠른 요약; `query=`로 결과 필터 |
-| `explain_method_logic` | 단일 메서드 내부 제어 흐름 요약 — Guard/Branch/Loop/Always 5~10줄 |
+| `analyze_impact_and_risk` | 클래스·메서드 수정 전 파급 범위 + 린트. `method_name=`으로 메서드 레벨 호출자 추적; `detail_level="summary"`로 빠른 요약; `query=`로 결과 필터 |
+| `explain_method_logic` | 단일 메서드 내부 제어 흐름 요약 — Guard/Branch/Loop/Always 5~10줄. C++ namespace 함수 지원 |
 | `trace_gameplay_flow` | 메서드 호출 체인 추적 + 소스 코드 |
 | `inspect_architectural_health` | 결합도/순환참조/데드코드/안티패턴 |
 | `explore_class_semantics` | 클래스 구조 + AI 3줄 요약 |

@@ -84,6 +84,7 @@ gdep init {path}
 | `describe` | Class detail + **full inheritance chain** + Blueprint impl + AI summary | Unfamiliar class, code review |
 | `flow` | Method call chain trace (C++→BP boundary) | Bug tracing, flow analysis |
 | `impact` | Change impact reverse-trace | Safety check before refactoring |
+| `method-impact` | Reverse-trace callers of a specific method | Before modifying a method, find all call sites |
 | `lint` | Game-specific anti-pattern scan | Quality check before PR |
 | `graph` | Dependency graph export | Documentation, visualization |
 | `diff` | Dependency diff before/after git commit | PR review, CI gate |
@@ -122,7 +123,7 @@ Claude Desktop config (`claude_desktop_config.json`):
 | Tool | Scenario |
 |------|----------|
 | `get_project_context` | **Call first** — full project overview |
-| `analyze_impact_and_risk` | Safety check before modifying a class |
+| `analyze_impact_and_risk` | Safety check before modifying a class or method (`method_name=` for method-level callers) |
 | `trace_gameplay_flow` | Trace how a feature works (C++→BP) |
 | `inspect_architectural_health` | Full tech debt diagnosis |
 | `explore_class_semantics` | Understand an unfamiliar class |

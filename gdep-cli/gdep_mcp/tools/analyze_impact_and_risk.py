@@ -21,10 +21,11 @@ from gdep.detector import detect
 
 
 def run(project_path: str, class_name: str,
+        method_name: str | None = None,
         detail_level: str = "full",
         query: str | None = None) -> str:
     """
-    Analyze the impact and risks of modifying a specific class before making changes.
+    Analyze the impact and risks of modifying a specific class (or method) before making changes.
 
     Combines reverse-dependency tracing (who calls this class, what assets use it)
     with engine-specific anti-pattern scanning (lint rules).
@@ -32,6 +33,7 @@ def run(project_path: str, class_name: str,
     Use this tool BEFORE modifying or refactoring a class to understand:
     - Which classes and assets will be affected (blast radius)
     - Whether the target class already has known anti-patterns
+    - (Optional) Which specific methods call the target method
 
     Args:
         project_path: Absolute path to the project root or Scripts/Source directory.
@@ -39,6 +41,9 @@ def run(project_path: str, class_name: str,
                                 "F:/MyGame/Source/MyGame" (UE5)
         class_name:   The C++ or C# class name to analyze.
                       Examples: "BattleManager", "APlayerCharacter"
+        method_name:  Optional. If provided, also traces method-level callers
+                      of class_name::method_name across the project.
+                      Examples: "checkCollision", "Update"
         detail_level: "summary" — affected class count + top-5 risk items (fast, low token).
                       "full"    — full impact tree + all lint issues (default).
         query:        Optional class/pattern filter. Only results containing this string
@@ -47,6 +52,7 @@ def run(project_path: str, class_name: str,
     Returns:
         A report containing:
         - Impact tree (or summary): which classes/prefabs/blueprints depend on this class
+        - Method-level callers (if method_name is provided)
         - Lint results: anti-patterns found in or around this class
     """
     try:
@@ -68,6 +74,19 @@ def run(project_path: str, class_name: str,
             sections.append(impact_text)
         else:
             sections.append(f"Impact analysis failed: {impact_result.error_message}")
+
+        # ── Method-Level Impact (optional) ─────────────────────────
+        if method_name:
+            try:
+                method_result = runner.method_impact(profile, class_name,
+                                                     method_name, depth=4)
+                sections.append("\n## Method-Level Impact")
+                if method_result.ok:
+                    sections.append(method_result.stdout)
+                else:
+                    sections.append(f"Method impact failed: {method_result.error_message}")
+            except Exception as me:
+                sections.append(f"\n## Method-Level Impact\nError: {me}")
 
         # ── Lint Analysis ────────────────────────────────────────────
         lint_result = runner.lint(profile, fmt="json")

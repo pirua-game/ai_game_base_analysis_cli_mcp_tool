@@ -508,6 +508,60 @@ public class MethodCallAnalyzer
 
     // ── 유틸 ──────────────────────────────────────────────────
 
+    // ── 역방향 호출 탐색 (method-impact) ─────────────────────────
+
+    /// <summary>
+    /// 프로젝트 전체에서 targetClass.targetMethod를 호출하는 메서드를 찾는다.
+    /// </summary>
+    public List<(string CallerClass, string CallerMethod, string? Condition)> FindCallers(
+        string targetClass, string targetMethod)
+    {
+        var seen    = new HashSet<string>();
+        var callers = new List<(string CallerClass, string CallerMethod, string? Condition)>();
+
+        foreach (var ((cls, method), methodList) in _index.Methods)
+        {
+            foreach (var m in methodList)
+            {
+                if (m.Body == null && m.ExpressionBody == null) continue;
+
+                SyntaxNode bodyRoot = (SyntaxNode?)m.Body ?? m.ExpressionBody!;
+
+                // 빠른 사전 필터: 메서드 이름이 바디 텍스트에 없으면 스킵
+                if (!bodyRoot.ToString().Contains(targetMethod)) continue;
+
+                string? matchedCond = null;
+                bool found = false;
+
+                foreach (var inv in bodyRoot.DescendantNodes()
+                                            .OfType<InvocationExpressionSyntax>())
+                {
+                    var (resolvedClass, resolvedMethod, _) = ResolveInvocation(inv, cls);
+                    if (resolvedMethod != targetMethod) continue;
+
+                    // 클래스 일치 확인: 해석 성공 시 정확 비교, null 이면 메서드명만으로 매칭
+                    if (resolvedClass != null && resolvedClass != targetClass) continue;
+
+                    matchedCond = ExtractConditionContext(inv);
+                    found = true;
+                    break; // 한 메서드에서 첫 번째 호출만 기록
+                }
+
+                if (found)
+                {
+                    var key = $"{cls}.{method}";
+                    if (seen.Add(key))
+                        callers.Add((cls, method, matchedCond));
+                }
+            }
+        }
+
+        return callers
+            .OrderBy(c => c.CallerClass)
+            .ThenBy(c => c.CallerMethod)
+            .ToList();
+    }
+
     public IReadOnlyDictionary<string, Dictionary<string, string>> GetStaticAccessors()
         => _index.StaticAccessors;
 

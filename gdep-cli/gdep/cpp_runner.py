@@ -296,6 +296,18 @@ def read_source(src: str, class_name: str, max_chars: int = 8000) -> RunResult:
                         parts.append(f"// ── {cpp_path.name} ──\n" + cpp_path.read_text(encoding='utf-8', errors='replace'))
                         break
 
+        # Namespace fallback: implementation may be in a differently-named .cpp file
+        if hasattr(cls, 'kind') and cls.kind == "namespace" and len(parts) <= 1:
+            try:
+                from .cpp_flow import _find_cpp_files
+                cpp_files_map = _find_cpp_files(src)
+                if class_name in cpp_files_map:
+                    cpp_impl = Path(cpp_files_map[class_name])
+                    if cpp_impl.exists():
+                        parts.append(f"// ── {cpp_impl.name} ──\n" + cpp_impl.read_text(encoding='utf-8', errors='replace'))
+            except Exception:
+                pass
+
         content = "\n\n".join(parts)
         if len(content) > max_chars:
             content = content[:max_chars] + f"\n\n... ({len(content)} chars total, showing first {max_chars})"
@@ -358,6 +370,63 @@ def impact(src: str, target_class: str, depth: int = 3) -> RunResult:
         return RunResult(ok=True, stdout="\n".join(lines), data=impact_tree)
     except Exception as e:
         return RunResult(ok=False, stdout="", stderr=str(e))
+
+
+# ── method-level impact ──────────────────────────────────────
+
+def method_impact(src: str, target_class: str, target_method: str,
+                  depth: int = 2) -> RunResult:
+    """Trace which methods across the project call target_class::target_method."""
+    try:
+        import re as _re
+        from .cpp_flow import _find_cpp_files, _extract_function_body, _extract_calls
+
+        cpp_files = _find_cpp_files(src)
+        callers: list[tuple[str, str, str]] = []  # (caller_cls, caller_method, condition)
+
+        for cls_name, cpp_path in cpp_files.items():
+            try:
+                text = Path(cpp_path).read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+
+            # Fast pre-filter: skip files that don't mention the target method at all
+            if target_method not in text:
+                continue
+
+            # Find all methods defined in this class, then check their bodies
+            for m in _re.finditer(r'\b' + _re.escape(cls_name) + r'\s*::\s*(\w+)\s*\(', text):
+                meth_name = m.group(1)
+                body = _extract_function_body(text, meth_name)
+                if not body or target_method not in body:
+                    continue
+                calls = _extract_calls(body)
+                for obj, callee, cond in calls:
+                    if callee != target_method:
+                        continue
+                    # Determine if this call targets our class
+                    callee_cls = cls_name
+                    if obj and obj not in ("this", "self"):
+                        if obj[0].isupper():
+                            callee_cls = obj
+                    if callee_cls == target_class or (not obj or obj in ("this", "self")):
+                        callers.append((cls_name, meth_name, cond))
+
+        if not callers:
+            return RunResult(ok=True,
+                             stdout=f"No callers found for {target_class}::{target_method}")
+
+        lines = [f"── Method Impact: {target_class}::{target_method} ──", ""]
+        lines.append(f"Called by {len(callers)} method(s):")
+        for caller_cls, caller_method, cond in sorted(callers):
+            cond_str = f" [{cond}]" if cond else ""
+            lines.append(f"  ← {caller_cls}::{caller_method}{cond_str}")
+
+        return RunResult(ok=True, stdout="\n".join(lines))
+    except Exception as e:
+        import traceback
+        return RunResult(ok=False, stdout="",
+                         stderr=f"{str(e)}\n{traceback.format_exc()}")
 
 
 # ── lint ─────────────────────────────────────────────────────

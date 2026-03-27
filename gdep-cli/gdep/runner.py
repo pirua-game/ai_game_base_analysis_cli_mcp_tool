@@ -528,6 +528,17 @@ def impact(profile: ProjectProfile, target_class: str, depth: int = 3) -> RunRes
     return result
 
 
+def method_impact(profile: ProjectProfile, target_class: str,
+                  target_method: str, depth: int = 2) -> RunResult:
+    """Trace which methods call target_class::target_method."""
+    if _is_cpp(profile):
+        from . import cpp_runner
+        return cpp_runner.method_impact(_src(profile), target_class,
+                                       target_method, depth=depth)
+    # C#: Roslyn 기반 gdep method-impact 커맨드 사용
+    return run(["method-impact", _src(profile), target_class, target_method])
+
+
 def graph(profile: ProjectProfile, fmt: str = "mermaid",
           output: str | None = None, cycles_only: bool = False) -> RunResult:
     if _is_cpp(profile):

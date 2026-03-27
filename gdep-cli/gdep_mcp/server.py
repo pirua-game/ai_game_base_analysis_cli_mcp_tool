@@ -124,10 +124,11 @@ def get_project_context(project_path: str) -> str:
 
 @mcp.tool()
 def analyze_impact_and_risk(project_path: str, class_name: str,
+                             method_name: str | None = None,
                              detail_level: str = "summary",
                              query: str | None = None) -> str:
     """
-    Analyze the blast radius and risks before modifying a class.
+    Analyze the blast radius and risks before modifying a class or method.
 
     ⚠️ CRITICAL: Always call with detail_level="summary" first.
     Only use detail_level="full" if the user explicitly asks for the complete impact tree.
@@ -135,24 +136,27 @@ def analyze_impact_and_risk(project_path: str, class_name: str,
 
     USE THIS TOOL WHEN:
     - User says "I want to refactor / modify / rename / delete class X"
-    - User asks "what will break if I change X?"
+    - User asks "what will break if I change X?" or "who calls X::method?"
     - User asks "is it safe to modify X?"
     - Before any non-trivial code change to understand side effects
 
     Returns:
     - Reverse dependency tree: all classes that directly or indirectly use X
+    - Method-level callers (if method_name is provided): which methods call X::method
     - Unity prefab / UE5 blueprint assets that reference X
     - Lint issues already present in or around X (anti-patterns to fix)
 
     Args:
         project_path: Absolute path to Scripts (Unity) or Source (UE5) folder.
         class_name:   Class to analyze. E.g. "BattleManager", "APlayerCharacter"
+        method_name:  Optional method name for method-level impact analysis.
+                      E.g. "checkCollision", "Update". Shows which methods call this one.
         detail_level: "summary" (default) — affected class count + top-5 risk items (fast).
                       "full"    — complete impact tree + all lint issues (expensive, use sparingly).
         query:        Optional filter string — only results containing this
                       class name or pattern are included. E.g. "Battle", "Manager"
     """
-    return _impact_run(project_path, class_name, detail_level, query)
+    return _impact_run(project_path, class_name, method_name, detail_level, query)
 
 
 @mcp.tool()
@@ -343,7 +347,8 @@ def suggest_lint_fixes(project_path: str, rule_ids: list[str] | None = None) -> 
     """Run linter and return actionable code fix suggestions for detected anti-patterns.
 
     Goes beyond reporting — provides concrete code snippets for each fixable issue.
-    Currently supports: UNI-PERF-001, UNI-PERF-002, UE5-BASE-001, UNI-ASYNC-001.
+    Currently supports: UNI-PERF-001, UNI-PERF-002, UE5-BASE-001, UNI-ASYNC-001,
+    AXM-PERF-001, AXM-MEM-001, AXM-EVENT-001.
 
     USE THIS TOOL WHEN:
     - User asks 'how do I fix these lint warnings?'
@@ -455,7 +460,8 @@ def find_unity_event_bindings(project_path: str,
 
 @mcp.tool()
 def analyze_unity_animator(project_path: str,
-                            controller_name: str | None = None) -> str:
+                            controller_name: str | None = None,
+                            detail_level: str = "summary") -> str:
     """
     Analyze Unity Animator Controller structure: layers, states, transitions, blend trees.
 
@@ -467,6 +473,8 @@ def analyze_unity_animator(project_path: str,
         project_path:     Absolute path to Unity Assets or project root.
         controller_name:  Optional — analyze only the named .controller file.
                           If None, analyzes all .controller files found.
+        detail_level:     "summary" (default) — controller names + layer/state counts.
+                          "full" — complete analysis with parameters, blend trees, transitions.
     """
     if not _UNITY_ANIMATOR_AVAILABLE:
         return (
@@ -475,7 +483,7 @@ def analyze_unity_animator(project_path: str,
         )
     try:
         from gdep.unity_animator import analyze_animator
-        return analyze_animator(project_path, controller_name) + confidence_footer(ConfidenceTier.MEDIUM, "animator YAML parsing")
+        return analyze_animator(project_path, controller_name, detail_level=detail_level) + confidence_footer(ConfidenceTier.MEDIUM, "animator YAML parsing")
     except Exception as e:
         return f"[analyze_unity_animator] Error: {e}"
 

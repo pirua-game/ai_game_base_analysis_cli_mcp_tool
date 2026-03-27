@@ -66,8 +66,8 @@ pip install gdep "mcp[cli]"
 
 | 工具 | 說明 |
 |------|------|
-| `analyze_impact_and_risk` | 修改類別前的影響範圍 + 程式碼檢查。`detail_level="summary"` 快速摘要；`query=` 篩選結果 |
-| `explain_method_logic` | 單一方法內部控制流摘要 — Guard/Branch/Loop/Always 5~10 行 |
+| `analyze_impact_and_risk` | 修改類別或方法前的影響範圍 + 程式碼檢查。`method_name=` 追蹤方法級呼叫方；`detail_level="summary"` 快速摘要；`query=` 篩選結果 |
+| `explain_method_logic` | 單一方法內部控制流摘要 — Guard/Branch/Loop/Always 5~10 行。支援 C++ namespace 函式 |
 | `trace_gameplay_flow` | 方法呼叫鏈追蹤 + 原始碼 |
 | `inspect_architectural_health` | 耦合度/循環引用/死碼/反模式 |
 | `explore_class_semantics` | 類別結構 + AI 三行摘要 |

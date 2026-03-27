@@ -385,6 +385,41 @@ def impact(path, target_class, depth, kind):
     _print_result(result)
 
 
+# ── method-impact ────────────────────────────────────────────
+
+@cli.command("method-impact", context_settings=CONTEXT_SETTINGS, epilog="""
+\b
+Examples:
+  # Who calls BattleCore::StartBattle?
+  gdep method-impact . BattleCore StartBattle
+
+  # UE5 C++ project
+  gdep method-impact ./Source AHSCharacterBase BeginPlay
+""")
+@click.argument("path",          default=".",  metavar="PATH")
+@click.argument("target_class",  metavar="CLASS")
+@click.argument("target_method", metavar="METHOD")
+@click.option("--depth", default=2, show_default=True, metavar="N",
+              help="Reverse call tracing depth")
+@click.option("--kind",  default=None,
+              type=click.Choice(["unity", "dotnet", "cpp", "unreal"]),
+              help="Force project type")
+def method_impact(path, target_class, target_method, depth, kind):
+    """Reverse-trace all callers of CLASS::METHOD.
+
+    \b
+    Shows which methods across the project call the specified method,
+    with optional conditions. C++ uses regex-based call graph; C#/Unity
+    uses Roslyn analysis.
+    """
+    profile = _get_profile(path)
+    if not _check_supported(profile, kind):
+        return
+    _safe_echo(f"► method-impact  [{profile.display}]  {target_class}::{target_method}  depth={depth}", fg="cyan")
+    result = runner.method_impact(profile, target_class, target_method, depth=depth)
+    _print_result(result)
+
+
 # ── test-scope ───────────────────────────────────────────────
 
 @cli.command("test-scope", context_settings=CONTEXT_SETTINGS, epilog="""

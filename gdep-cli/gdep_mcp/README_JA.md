@@ -52,8 +52,8 @@ pip install gdep "mcp[cli]"
 
 | ツール | 説明 |
 |--------|------|
-| `analyze_impact_and_risk` | クラス変更前の波及範囲 + リント。`detail_level="summary"` で高速要約；`query=` で結果フィルタ |
-| `explain_method_logic` | 単一メソッドの内部制御フロー要約 — Guard/Branch/Loop/Always を5〜10行で |
+| `analyze_impact_and_risk` | クラス・メソッド変更前の波及範囲 + リント。`method_name=` でメソッドレベル呼び出し元追跡；`detail_level="summary"` で高速要約；`query=` で結果フィルタ |
+| `explain_method_logic` | 単一メソッドの内部制御フロー要約 — Guard/Branch/Loop/Always を5〜10行で。C++ namespace 関数対応 |
 | `trace_gameplay_flow` | メソッド呼び出しチェーン追跡 + ソースコード |
 | `inspect_architectural_health` | 結合度/循環参照/デッドコード/アンチパターン |
 | `explore_class_semantics` | クラス構造 + AI 3行要約 |

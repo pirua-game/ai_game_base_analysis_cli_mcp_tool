@@ -195,13 +195,33 @@ def _extract_calls(body: str) -> list[tuple[str, str, str]]:
 
 
 def _extract_function_body(cpp_text: str, func_name: str) -> str | None:
-    """Extract the body of Class::func_name from a .cpp file."""
+    """Extract the body of Class::func_name from a .cpp file.
+
+    Also handles namespace-style definitions where the function is defined
+    inside a namespace block without a ClassName:: prefix.
+    """
     pat = re.compile(
         r'\b\w+\s*::\s*' + re.escape(func_name) + r'\s*\(',
         re.DOTALL,
     )
     m = pat.search(cpp_text)
     if not m:
+        # Fallback: namespace-style (e.g. `std::string bigAddNum(...)` inside `namespace Foo {}`)
+        pat_ns = re.compile(
+            r'(?:^|\n)[ \t]*(?:[\w:<>*& ]+[ \t]+)' + re.escape(func_name) + r'\s*\([^;{}]*\)\s*(?:const\s*)?\s*\{',
+        )
+        m_ns = pat_ns.search(cpp_text)
+        if not m_ns:
+            return None
+        brace_pos = cpp_text.index('{', m_ns.start())
+        depth = 0
+        for i in range(brace_pos, len(cpp_text)):
+            if cpp_text[i] == '{':
+                depth += 1
+            elif cpp_text[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    return cpp_text[brace_pos + 1:i]
         return None
 
     paren_start = cpp_text.index('(', m.start())
@@ -240,8 +260,13 @@ _IGNORE_DIRS = {
 
 
 def _find_cpp_files(source_path: str) -> dict[str, str]:
-    """Return {ClassName: cpp_file_path} index by scanning .cpp files."""
-    result: dict[str, str] = {}
+    """Return {ClassName: cpp_file_path} index by scanning .cpp files.
+
+    Maps each class to the file where it is most frequently defined
+    (highest count of ClassName:: occurrences), so that implementation
+    files beat callers that merely reference the class.
+    """
+    counts: dict[str, dict[str, int]] = {}   # {class: {file_path: count}}
     for cpp in Path(source_path).rglob("*.cpp"):
         if any(p in _IGNORE_DIRS for p in cpp.parts):
             continue
@@ -249,11 +274,13 @@ def _find_cpp_files(source_path: str) -> dict[str, str]:
             text = cpp.read_text(encoding="utf-8", errors="replace")
         except Exception:
             continue
+        cpp_str = str(cpp)
         for m in re.finditer(r'\b([A-Z]\w+)\s*::\s*\w+\s*\(', text):
             cls = m.group(1)
-            if cls not in result:
-                result[cls] = str(cpp)
-    return result
+            file_map = counts.setdefault(cls, {})
+            file_map[cpp_str] = file_map.get(cpp_str, 0) + 1
+    # Pick the file with the most ClassName:: occurrences for each class
+    return {cls: max(files, key=lambda f: files[f]) for cls, files in counts.items()}
 
 
 def _build_parent_map(source_path: str) -> dict[str, str]:
@@ -263,7 +290,7 @@ def _build_parent_map(source_path: str) -> dict[str, str]:
     """
     result: dict[str, str] = {}
     pat = re.compile(
-        r'class\s+(?:[A-Z0-9_]+_API\s+)?([AUF][A-Za-z0-9_]+)\s*:\s*public\s+([AUF][A-Za-z0-9_]+)'
+        r'class\s+(?:[A-Z0-9_]+_API\s+)?([A-Z][A-Za-z0-9_]+)\s*:\s*public\s+([A-Z][A-Za-z0-9_]+)'
     )
     for h in Path(source_path).rglob("*.h"):
         if any(p in _IGNORE_DIRS for p in h.parts):
@@ -313,6 +340,17 @@ def trace_flow(
     cpp_files       = _find_cpp_files(source_path)
     project_classes = set(cpp_files.keys())
     parent_map      = _build_parent_map(source_path)
+
+    # Method→class reverse index: {method_name: [ClassName, ...]}
+    # Used to resolve lowercase variable calls like monster->isDead() → DFMonster
+    method_owners: dict[str, list[str]] = {}
+    for cls_name, cpp_path in cpp_files.items():
+        try:
+            text = Path(cpp_path).read_text(encoding="utf-8", errors="replace")
+            for m in re.finditer(r'\b' + re.escape(cls_name) + r'\s*::\s*(\w+)\s*\(', text):
+                method_owners.setdefault(m.group(1), []).append(cls_name)
+        except Exception:
+            pass
 
     # Loose class name lookup: maps prefix-stripped variants to canonical names.
     # e.g. "UARGamePlayAbility_BasicAttack" also registers "ARGamePlayAbility_BasicAttack"
@@ -400,6 +438,11 @@ def trace_flow(
                     callee_cls = parent_map.get(cls, cls)
                 elif obj[0].isupper():
                     callee_cls = obj
+                elif obj[0].islower():
+                    # Variable/pointer call (e.g. monster->isDead()): resolve via method_owners index
+                    owners = method_owners.get(callee, [])
+                    if len(owners) == 1:
+                        callee_cls = owners[0]
 
             callee_id = f"{callee_cls}.{callee}"
 

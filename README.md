@@ -75,8 +75,8 @@ With gdep:     Direct deps: 2 · Indirect: 200+ UI classes · Asset: prefabs/UI/
 | Tool | When to use |
 |------|-------------|
 | `get_project_context` | **Always call first** — full project overview |
-| `analyze_impact_and_risk` | Before modifying any class (`detail_level="summary"` for quick count) |
-| `explain_method_logic` | Internal control flow of a single method — Guard/Branch/Loop/Always |
+| `analyze_impact_and_risk` | Before modifying any class or method (`method_name=` for method-level callers; `detail_level="summary"` for quick count) |
+| `explain_method_logic` | Internal control flow of a single method — Guard/Branch/Loop/Always. Supports C++ namespace-style functions |
 | `trace_gameplay_flow` | Trace C++ → Blueprint call chains |
 | `inspect_architectural_health` | Tech debt audit |
 | `explore_class_semantics` | Unfamiliar class deep-dive |
@@ -194,6 +194,7 @@ Full documentation → [gdep-cli/web/README.md](./gdep-cli/web/README.md)
 | `describe` | Class detail + **full inheritance chain** + Blueprint impl + AI summary | Unfamiliar class, code review |
 | `flow` | Method call chain (C++→BP boundary) | Bug tracing, flow analysis |
 | `impact` | Change impact reverse-trace | Safety check before refactoring |
+| `method-impact` | Reverse-trace callers of a specific method | Before modifying a method, find all call sites |
 | `test-scope` | Test files to run after modifying a class | Before merging, CI planning |
 | `watch` | Live file-change monitor (impact+test+lint) | During active development |
 | `lint` | Game-specific anti-pattern scan (+ `--fix`) | Quality check before PR |
