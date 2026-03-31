@@ -8,9 +8,9 @@ title GDEP Backend
 
 echo [GDEP Backend] Starting uvicorn on port 8000...
 
-cd /d %~dp0gdep-cli\web\backend
+cd /d "%~dp0gdep-cli\web\backend"
 
-%~dp0gdep-cli\.venv\Scripts\python.exe -m uvicorn main:app --port 8000
+"%~dp0gdep-cli\.venv\Scripts\python.exe" -m uvicorn main:app --port 8000
 
 
 

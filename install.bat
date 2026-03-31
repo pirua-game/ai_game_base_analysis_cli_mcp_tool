@@ -14,6 +14,11 @@ set ROOT=%~dp0
 set CLI=%ROOT%gdep-cli
 set VENV=%CLI%\.venv
 
+:: ── 공백 경로 대응: 8.3 단축경로 변환 (MCP config용) ────────────
+for %%I in ("%VENV%\Scripts\python.exe") do set "VENV_PYTHON_SHORT=%%~sI"
+for %%I in ("%ROOT%gdep-cli\gdep_mcp\server.py") do set "SERVER_SHORT=%%~sI"
+for %%I in ("%CLI%") do set "CLI_SHORT=%%~sI"
+
 :: ── 1. Python 확인 ──────────────────────────────────────────
 echo [1/5] Python 확인...
 py -3.11 --version > nul 2>&1
@@ -122,13 +127,19 @@ echo  설정 내용:
 echo    {
 echo      "mcpServers": {
 echo        "gdep": {
-echo          "command": "%VENV:\=/%/Scripts/python.exe",
-echo          "args": ["%ROOT:\=/%gdep-cli/gdep-mcp/server.py"],
-echo          "cwd": "%CLI:\=/%"
+echo          "command": "!VENV_PYTHON_SHORT:\=/!",
+echo          "args": ["!SERVER_SHORT:\=/!"],
+echo          "cwd": "!CLI_SHORT:\=/!"
 echo        }
 echo      }
 echo    }
 echo.
+echo !ROOT! | findstr " " > nul
+if not errorlevel 1 (
+    echo  [INFO] 설치 경로에 공백이 포함되어 있어 8.3 단축 경로를 사용합니다.
+    echo         문제가 지속되면 공백 없는 경로로 이동하세요.
+    echo.
+)
 pause
 goto :eof
 
