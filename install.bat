@@ -14,12 +14,12 @@ set ROOT=%~dp0
 set CLI=%ROOT%gdep-cli
 set VENV=%CLI%\.venv
 
-:: ── 공백 경로 대응: 8.3 단축경로 변환 (MCP config용) ────────────
+REM -- Short path conversion for paths with spaces (MCP config) --
 for %%I in ("%VENV%\Scripts\python.exe") do set "VENV_PYTHON_SHORT=%%~sI"
 for %%I in ("%ROOT%gdep-cli\gdep_mcp\server.py") do set "SERVER_SHORT=%%~sI"
 for %%I in ("%CLI%") do set "CLI_SHORT=%%~sI"
 
-:: ── 1. Python 확인 ──────────────────────────────────────────
+REM -- 1. Python check --
 echo [1/5] Python 확인...
 py -3.11 --version > nul 2>&1
 if errorlevel 1 (
@@ -30,7 +30,7 @@ if errorlevel 1 (
 for /f "tokens=2" %%v in ('py -3.11 --version 2^>^&1') do set PYVER=%%v
 echo  [OK] Python %PYVER%
 
-:: ── 2. .NET Runtime 확인 ────────────────────────────────────
+REM -- 2. .NET Runtime check --
 echo [2/5] .NET Runtime 확인...
 dotnet --version > nul 2>&1
 if errorlevel 1 (
@@ -41,7 +41,7 @@ if errorlevel 1 (
     echo  [OK] .NET %DOTNETVER%
 )
 
-:: ── 3. Node.js 확인 ─────────────────────────────────────────
+REM -- 3. Node.js check --
 echo [3/5] Node.js 확인...
 node --version > nul 2>&1
 if errorlevel 1 (
@@ -54,7 +54,7 @@ if errorlevel 1 (
     set NODE_OK=1
 )
 
-:: ── 4. Python venv + pip install ────────────────────────────
+REM -- 4. Python venv + pip install --
 echo [4/5] Python 패키지 설치...
 
 if not exist "%VENV%" (
@@ -75,7 +75,7 @@ echo  MCP 패키지 설치 중...
 
 echo  [OK] Python 패키지 완료
 
-:: ── 5. Node.js 프론트엔드 의존성 ─────────────────────────────
+REM -- 5. Node.js frontend dependencies --
 echo [5/5] 프론트엔드 의존성 설치...
 if not "%NODE_OK%"=="1" goto :skip_npm
 
@@ -105,7 +105,7 @@ echo  [SKIP] Node.js 없음 - Web UI 설치 생략
 
 :install_done
 
-:: ── 완료 ────────────────────────────────────────────────────
+REM -- Done --
 echo.
 echo  ===================================
 echo           설치 완료!
