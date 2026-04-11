@@ -1,7 +1,7 @@
 """
 gdep — Unified CLI for Game/App Codebase Analysis
 """
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 
 from .detector import ProjectKind, ProjectProfile, detect
 from .runner import (
