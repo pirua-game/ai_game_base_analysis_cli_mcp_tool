@@ -7,6 +7,7 @@ import AnalysisView from './components/AnalysisView'
 import EngineView from './components/EngineView'
 import AgentChat from './components/AgentChat'
 import WatchPanel from './components/WatchPanel'
+import WikiView from './components/WikiView'
 
 function MainContent() {
   const [activeTab, setActiveTab] = useState('browser')
@@ -19,6 +20,7 @@ function MainContent() {
     { id: 'engine',   label: t('tab_engine') },
     { id: 'watch',    label: t('tab_watch') },
     { id: 'agent',    label: t('tab_agent') },
+    { id: 'wiki',     label: t('tab_wiki') },
   ]
 
   return (
@@ -63,6 +65,7 @@ function MainContent() {
         {activeTab === 'engine'   && <EngineView />}
         {activeTab === 'watch'    && <WatchPanel />}
         {activeTab === 'agent'    && <AgentChat />}
+        {activeTab === 'wiki'     && <WikiView />}
       </div>
     </div>
   )

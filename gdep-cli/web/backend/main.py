@@ -15,6 +15,7 @@ from routers.ue5      import router as ue5_router
 from routers.engine   import router as engine_router
 from routers.watch    import router as watch_router
 from routers.analysis import router as analysis_router
+from routers.wiki     import router as wiki_router
 
 app = FastAPI(
     title="gdep API",
@@ -39,6 +40,7 @@ app.include_router(ue5_router,     prefix="/api/ue5",     tags=["ue5"])
 app.include_router(engine_router,  prefix="/api/engine",  tags=["engine"])
 app.include_router(watch_router,    prefix="/api",         tags=["watch"])
 app.include_router(analysis_router, prefix="/api/analysis", tags=["analysis"])
+app.include_router(wiki_router,    prefix="/api/wiki",     tags=["wiki"])
 
 
 @app.get("/")

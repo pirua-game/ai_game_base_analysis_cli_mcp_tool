@@ -387,3 +387,37 @@ export const analysisNewApi = {
       { path, class_name, compact, include_source })
        .then(r => r.data.result),
 }
+
+// ── Wiki API ──────────────────────────────────────────────────
+
+export interface WikiNode {
+  id: string; type: string; title: string; file_path: string
+  created_at: string; updated_at: string; stale: boolean
+  meta: Record<string, unknown>
+}
+export interface WikiSearchResult { node: WikiNode; snippet: string; score: number }
+export interface WikiNodeDetail { node: WikiNode; content: string }
+export interface WikiGraphNode { id: string; label: string; type: string; stale: boolean }
+export interface WikiGraphEdge { source: string; target: string; relation: string }
+export interface WikiGraphData { nodes: WikiGraphNode[]; edges: WikiGraphEdge[] }
+export interface WikiStats {
+  types: Record<string, number>
+  total_nodes: number
+  total_edges: number
+  stale_count: number
+}
+
+export const wikiApi = {
+  stats: (path: string) =>
+    api.get<WikiStats>('/wiki/stats', { params: { path } }).then(r => r.data),
+  list: (path: string, type?: string, limit = 200) =>
+    api.get<WikiNode[]>('/wiki/list', { params: { path, type: type || undefined, limit } }).then(r => r.data),
+  search: (path: string, q: string, mode = 'or', type?: string, related = false, limit = 20) =>
+    api.get<WikiSearchResult[]>('/wiki/search', { params: { path, q, mode, type: type || undefined, related, limit } }).then(r => r.data),
+  node: (path: string, nodeId: string) =>
+    api.get<WikiNodeDetail>('/wiki/node', { params: { path, node_id: nodeId } }).then(r => r.data),
+  edges: (path: string, nodeId: string, relation?: string, depth = 1) =>
+    api.get<WikiGraphEdge[]>('/wiki/edges', { params: { path, node_id: nodeId, relation: relation || undefined, depth } }).then(r => r.data),
+  graph: (path: string, nodeId: string, depth = 1) =>
+    api.get<WikiGraphData>('/wiki/graph', { params: { path, node_id: nodeId, depth } }).then(r => r.data),
+}
